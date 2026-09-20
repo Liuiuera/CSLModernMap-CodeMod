@@ -20,3 +20,10 @@ tools\deploy_cs2_mod.cmd -Configuration Release
 ```
 
 This repository contains only the code mod source. Renderer source, binaries, and packaged payloads are not included. The mod does not download required files from the network.
+
+## Contributors
+
+- Liuiuera
+- OpenAI Codex
+
+Some code and documentation were generated with AI assistance and reviewed by the project maintainer.

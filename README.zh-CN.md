@@ -20,3 +20,10 @@ tools\deploy_cs2_mod.cmd -Configuration Release
 ```
 
 本仓库只包含代码模组源代码，不包含查看器源代码、二进制文件或打包载荷。模组不会从网络下载必需文件。
+
+## 贡献者
+
+- Liuiuera
+- OpenAI Codex
+
+部分代码和文档由 AI 辅助生成，并经项目维护者审查。
