@@ -1,0 +1,22 @@
+# CSLModernMap Code Mod
+
+[English](README.md) | [简体中文](README.zh-CN.md)
+
+The Cities: Skylines II code mod for CSLModernMap. It exports the current city as a compressed `.cmm.gz` map file.
+
+## Features
+
+- Exports roads, tracks, buildings, public transport, terrain, and water.
+- Writes gzip-compressed UTF-8 JSON using the `cmm-v1` schema.
+- Opens completed exports with the companion renderer included in official releases.
+
+## Build
+
+Requires Windows, Cities: Skylines II with its official modding toolchain, .NET SDK 8+, and Node.js 18+.
+
+```powershell
+python tools\cs2_setup_env.py
+tools\deploy_cs2_mod.cmd -Configuration Release
+```
+
+This repository contains only the code mod source. Renderer source, binaries, and packaged payloads are not included. The mod does not download required files from the network.

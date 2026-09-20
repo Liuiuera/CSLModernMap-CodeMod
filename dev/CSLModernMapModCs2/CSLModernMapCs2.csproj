@@ -1,0 +1,117 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    CSLModernMap 的《城市：天际线 II》数据导出 Mod。
+
+    这个工程**不自己定义构建规则**，而是直接复用游戏自带的官方 Modding Toolchain：
+    Mod.props / Mod.targets 由 %CSII_TOOLPATH% 提供（见 tools/cs2_setup_env.py），
+    目标框架 net48、LangVersion 9.0、源码生成器、构建后 Burst 后处理、以及
+    自动部署到正式 Mods\<程序集名>\ 全部由它接管。
+
+    因此本文件只做三件事：程序集命名、补一个 .NET Framework 4.8 引用程序集包
+    （本机没装 VS 的 4.8 目标包，用官方 NuGet 包代替，仅编译期）、列引用。
+  -->
+
+  <PropertyGroup>
+    <AssemblyName>CSLModernMapCs2</AssemblyName>
+    <RootNamespace>CSLModernMap</RootNamespace>
+    <PublishConfigurationPath>Properties\PublishConfiguration.xml</PublishConfigurationPath>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\</OutputPath>
+    <Deterministic>false</Deterministic>
+    <!-- 与一代 Mod 保持一致：不生成 net48 子目录 -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 仅编译期使用；不随 Mod 分发 -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+  </ItemGroup>
+
+  <!-- Import 必须在 PropertyGroup 之后 -->
+  <Import Project="$([System.Environment]::GetEnvironmentVariable('CSII_TOOLPATH', 'EnvironmentVariableTarget.User'))\Mod.props" />
+  <Import Project="$([System.Environment]::GetEnvironmentVariable('CSII_TOOLPATH', 'EnvironmentVariableTarget.User'))\Mod.targets" />
+
+  <ItemGroup>
+    <!-- 游戏程序集与 Unity 程序集一律由 $(ManagedPath) 解析，全部不落地 -->
+    <Reference Include="Game">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Colossal.Core">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Colossal.Logging">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Colossal.Localization">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Colossal.IO.AssetDatabase">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Colossal.Mathematics">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Colossal.PSI.Common">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <Private>false</Private>
+    </Reference>
+    <!-- 随包查看器载荷（.cslmr）就是 zip，解压走 BCL 的 ZipArchive / ZipArchiveEntry。
+         官方 Mod.props 不隐式引用任何程序集，用哪个就得在这里显式列出来；
+         运行时由游戏的 Mono 运行时提供，不需要随 Mod 落地（Private=false）。 -->
+    <Reference Include="System.IO.Compression">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <Private>false</Private>
+    </Reference>
+    <!-- 「复制导出目录」用 GUIUtility.systemCopyBuffer；这是 Unity 自带的剪贴板入口，
+         不引入任何第三方包，也不依赖 Windows 专有 API。 -->
+    <Reference Include="UnityEngine.IMGUIModule">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.Burst">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.Collections">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.Entities">
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.Mathematics">
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!--
+    ModPublisher 发布的是官方 DeployDir 内容。查看器载荷不是 C# 编译输出，
+    因此必须在 DeployWIP 之后显式复制进去，否则本地部署脚本正常、线上 Mod 却缺查看器。
+  -->
+  <ItemGroup>
+    <CSLModernMapPayload Include="$(MSBuildProjectDirectory)\CSLModernMapRenderer.cslmr"
+                         Condition="Exists('$(MSBuildProjectDirectory)\CSLModernMapRenderer.cslmr')" />
+    <CSLModernMapPayload Include="$(MSBuildProjectDirectory)\CSLModernMapRenderer.cslmr.sha256"
+                         Condition="Exists('$(MSBuildProjectDirectory)\CSLModernMapRenderer.cslmr.sha256')" />
+    <CSLModernMapPayload Include="$(MSBuildProjectDirectory)\renderer-version.txt"
+                         Condition="Exists('$(MSBuildProjectDirectory)\renderer-version.txt')" />
+  </ItemGroup>
+
+  <Target Name="CheckCSLModernMapPayloadForPublish" BeforeTargets="Publish">
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\CSLModernMapRenderer.cslmr')"
+           Text="查看器载荷缺失：CSLModernMapRenderer.cslmr。请先运行 tools\pack_cs2_renderer.py。" />
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\CSLModernMapRenderer.cslmr.sha256')"
+           Text="查看器载荷校验文件缺失：CSLModernMapRenderer.cslmr.sha256。请先运行 tools\pack_cs2_renderer.py。" />
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\renderer-version.txt')"
+           Text="查看器版本文件缺失：renderer-version.txt。请先运行 tools\pack_cs2_renderer.py。" />
+  </Target>
+
+  <Target Name="DeployCSLModernMapPayload" AfterTargets="DeployWIP">
+    <Copy SourceFiles="@(CSLModernMapPayload)"
+          DestinationFiles="@(CSLModernMapPayload->'$(DeployDir)\%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
