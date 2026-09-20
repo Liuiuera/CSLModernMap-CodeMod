@@ -19,7 +19,7 @@ python tools\cs2_setup_env.py
 tools\deploy_cs2_mod.cmd -Configuration Release
 ```
 
-This repository contains only the code mod source. Renderer source, binaries, and packaged payloads are not included. The mod does not download required files from the network.
+The mod does not download required files from the network.
 
 ## Contributors
 
