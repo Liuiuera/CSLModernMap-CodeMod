@@ -15,8 +15,7 @@ CSLModernMap 的《城市：天际线 II》代码模组，可将当前城市导�
 需要 Windows、《城市：天际线 II》及其官方模组工具链、.NET SDK 8+ 和 Node.js 18+。
 
 ```powershell
-python tools\cs2_setup_env.py
-tools\deploy_cs2_mod.cmd -Configuration Release
+dotnet build dev\CSLModernMapModCs2\CSLModernMapCs2.csproj -c Release
 ```
 
 模组不会从网络下载必需文件。

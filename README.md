@@ -15,8 +15,7 @@ The Cities: Skylines II code mod for CSLModernMap. It exports the current city a
 Requires Windows, Cities: Skylines II with its official modding toolchain, .NET SDK 8+, and Node.js 18+.
 
 ```powershell
-python tools\cs2_setup_env.py
-tools\deploy_cs2_mod.cmd -Configuration Release
+dotnet build dev\CSLModernMapModCs2\CSLModernMapCs2.csproj -c Release
 ```
 
 The mod does not download required files from the network.

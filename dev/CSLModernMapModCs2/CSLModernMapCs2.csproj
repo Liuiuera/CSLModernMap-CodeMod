@@ -4,7 +4,7 @@
     CSLModernMap 的《城市：天际线 II》数据导出 Mod。
 
     这个工程**不自己定义构建规则**，而是直接复用游戏自带的官方 Modding Toolchain：
-    Mod.props / Mod.targets 由 %CSII_TOOLPATH% 提供（见 tools/cs2_setup_env.py），
+    Mod.props / Mod.targets 由 %CSII_TOOLPATH% 指向的官方模组工具链提供，
     目标框架 net48、LangVersion 9.0、源码生成器、构建后 Burst 后处理、以及
     自动部署到正式 Mods\<程序集名>\ 全部由它接管。
 
@@ -101,11 +101,11 @@
 
   <Target Name="CheckCSLModernMapPayloadForPublish" BeforeTargets="Publish">
     <Error Condition="!Exists('$(MSBuildProjectDirectory)\CSLModernMapRenderer.cslmr')"
-           Text="查看器载荷缺失：CSLModernMapRenderer.cslmr。请先运行 tools\pack_cs2_renderer.py。" />
+           Text="查看器载荷缺失：CSLModernMapRenderer.cslmr。" />
     <Error Condition="!Exists('$(MSBuildProjectDirectory)\CSLModernMapRenderer.cslmr.sha256')"
-           Text="查看器载荷校验文件缺失：CSLModernMapRenderer.cslmr.sha256。请先运行 tools\pack_cs2_renderer.py。" />
+           Text="查看器载荷校验文件缺失：CSLModernMapRenderer.cslmr.sha256。" />
     <Error Condition="!Exists('$(MSBuildProjectDirectory)\renderer-version.txt')"
-           Text="查看器版本文件缺失：renderer-version.txt。请先运行 tools\pack_cs2_renderer.py。" />
+           Text="查看器版本文件缺失：renderer-version.txt。" />
   </Target>
 
   <Target Name="DeployCSLModernMapPayload" AfterTargets="DeployWIP">
