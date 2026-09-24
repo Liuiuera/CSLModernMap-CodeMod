@@ -8,12 +8,9 @@ using Unity.Mathematics;
 
 namespace CSLModernMap.Systems
 {
-    /// <summary>
-    /// 将CS2站点、线路和路径转换为CMM。CMM引用只指向本次实际导出的节点和路段。
-    /// </summary>
+    /// <summary>采集公共交通站点与线路数据</summary>
     internal static class TransitExport
     {
-        /// <summary>Owner链最大上溯跳数；超过视作不可锚定（防环、防意外长链）。</summary>
         private const int MaxOwnerHops = 8;
 
         private static readonly HashSet<Game.Prefabs.TransportType> ExportableTypes =
@@ -35,10 +32,8 @@ namespace CSLModernMap.Systems
 
             internal string RoutesJson = "";
 
-            /// <summary>线路实体 → prefab资产名，写进extensions.cs2；line.source_raw是渲染端类型关键字，放不下资产名。</summary>
             internal string LinePrefabsJson = "";
 
-            /// <summary>完整JSON数组（含方括号），与terrain.Issues合并进顶层issues。</summary>
             internal string Issues = "[]";
 
             internal int IssueCount;
@@ -49,11 +44,9 @@ namespace CSLModernMap.Systems
             internal int LineCount;
             internal int RouteCount;
 
-            /// <summary>纯货物线路数（不进transit_lines，只计数进extensions.cs2.cargo_routes）。</summary>
             internal int CargoRouteCount;
         }
 
-        /// <summary>内存里的站点记录；serving_line_ids由线路侧回填后再序列化。</summary>
         private struct StopRecord
         {
             internal int Id;
@@ -72,7 +65,7 @@ namespace CSLModernMap.Systems
             Func<Entity, string> getPrefabName,
             HashSet<Entity> exportedNodes,
             HashSet<Entity> exportedNetworks,
-            Dictionary<Entity, int> laneToNetworkId)
+            Cs2DerivedNetworkState derived)
         {
             var issues = new CmmIssueCollector();
 
@@ -90,10 +83,8 @@ namespace CSLModernMap.Systems
                 em, getPrefabName, nameSystem, exportedNodes, exportedNetworks,
                 out var unresolvedStops);
             var result = CollectLinesAndRoutes(
-                em, getPrefabName, nameSystem, stops,
-                exportedNetworks, laneToNetworkId);
+                em, getPrefabName, nameSystem, stops, derived);
 
-            // 两次导出的确定性：站点 / 线路都按实体Index排序后再写。
             stops.Sort((a, b) => a.Id.CompareTo(b.Id));
             result.StopsJson = SerializeStops(stops);
 
@@ -192,11 +183,7 @@ namespace CSLModernMap.Systems
             return records;
         }
 
-        /// <summary>
-        /// stop.network_node_id的锚定链：沿Owner向上找 (edge, curvePosition) 事实，
-        /// 再按端点归属取node。全部走真实组件，不做空间最近邻。
-        /// 返回Entity.Null表示不可锚定。
-        /// </summary>
+        /// <summary>沿归属关系锚定已导出网络节点而非查找最近节点</summary>
         private static Entity AnchorToNetworkNode(
             EntityManager em,
             Entity stop,
@@ -237,8 +224,6 @@ namespace CSLModernMap.Systems
 
                 if (edge != Entity.Null && exportedNetworks.Contains(edge))
                 {
-                    // curve position靠近起点端取m_Start，靠近终点端取m_End
-                    // （Curve是从m_Start指向m_End的贝塞尔）。
                     var edgeData = em.GetComponentData<Game.Net.Edge>(edge);
                     var node = curvePosition < 0.5f ? edgeData.m_Start : edgeData.m_End;
                     if (node != Entity.Null && exportedNodes.Contains(node))
@@ -281,14 +266,12 @@ namespace CSLModernMap.Systems
             }
         }
 
-        /// <summary>采集客运线路；一条CS2 TransportLine对应一条CMM line和route。</summary>
         private static Result CollectLinesAndRoutes(
             EntityManager em,
             Func<Entity, string> getPrefabName,
             Game.UI.NameSystem nameSystem,
             List<StopRecord> stops,
-            HashSet<Entity> exportedNetworks,
-            Dictionary<Entity, int> laneToNetworkId)
+            Cs2DerivedNetworkState derived)
         {
             var result = new Result();
             var exportedStopIds = new HashSet<int>();
@@ -328,7 +311,6 @@ namespace CSLModernMap.Systems
             var entities = query.ToEntityArray(Allocator.Temp);
             try
             {
-                // 按实体Index排序，两次导出之间字节级可对比。
                 var sorted = new List<Entity>(entities.Length);
                 for (var i = 0; i < entities.Length; i++)
                 {
@@ -361,6 +343,7 @@ namespace CSLModernMap.Systems
 
                     var prefabName = getPrefabName(prefab) ?? "";
                     var lineTypeKeyword = MapLineTypeKeyword(lineData.m_TransportType);
+                    var transitKind = MapStopKind(lineData.m_TransportType);
 
                     var stopIds = new List<int>();
                     var waypoints = em.GetBuffer<Game.Routes.RouteWaypoint>(entity);
@@ -386,14 +369,14 @@ namespace CSLModernMap.Systems
                         }
                     }
 
-                    // is_closed用写出的站序判断：首尾同一站且多于1站
-                    // （原始站序即使闭合，闭合站被剔除后也不能再声称loop，否则validate报错）。
                     var isClosed = stopIds.Count > 1 && stopIds[0] == stopIds[stopIds.Count - 1];
 
                     var pathSegmentIds = new List<int>();
                     var segments = em.GetBuffer<Game.Routes.RouteSegment>(entity);
                     for (var s = 0; s < segments.Length; s++)
                     {
+                        var legPathSegmentIds = new List<int>();
+                        var legPoints = new List<float3>();
                         var segment = segments[s].m_Segment;
                         if (segment == Entity.Null
                             || !em.HasComponent<Game.Pathfind.PathElement>(segment))
@@ -404,35 +387,55 @@ namespace CSLModernMap.Systems
                         var pathElements = em.GetBuffer<Game.Pathfind.PathElement>(segment);
                         for (var p = 0; p < pathElements.Length; p++)
                         {
-                            var target = pathElements[p].m_Target;
-                            int networkId;
-                            if (target != Entity.Null && exportedNetworks.Contains(target))
-                            {
-                                networkId = target.Index;
-                            }
-                            else if (target != Entity.Null
-                                && laneToNetworkId.TryGetValue(target, out var ownerNetworkId))
-                            {
-                                networkId = ownerNetworkId;
-                            }
-                            else
+                            var path = pathElements[p];
+                            var target = path.m_Target;
+                            if (target == Entity.Null
+                                || !em.HasComponent<Game.Net.Curve>(target)
+                                || em.HasComponent<Game.Objects.OutsideConnection>(target))
                             {
                                 continue;
                             }
 
-                            // 一条路段通常包含多条lane；路径缓冲会连续列出它们。
-                            // CMM引用路段而非车道，因此只去掉相邻的重复路段。
-                            if (pathSegmentIds.Count == 0
-                                || pathSegmentIds[pathSegmentIds.Count - 1] != networkId)
+                            var curve = em.GetComponentData<Game.Net.Curve>(target);
+                            var points = Cs2Geometry.BuildPath(curve.m_Bezier, path.m_TargetDelta);
+                            var networkId = derived.AddRouteSegment(
+                                target.Index,
+                                transitKind,
+                                points);
+                            if (networkId != 0)
                             {
                                 pathSegmentIds.Add(networkId);
+                                legPathSegmentIds.Add(networkId);
+                                if (legPoints.Count == 0)
+                                {
+                                    legPoints.Add(points[0]);
+                                }
+
+                                legPoints.Add(points[points.Count - 1]);
                             }
+                        }
+
+                        var hasNextStop = s + 1 < stopIds.Count;
+                        var closesLine = stopIds.Count > 1
+                            && segments.Length == stopIds.Count
+                            && s == stopIds.Count - 1;
+                        if (legPathSegmentIds.Count > 0 && (hasNextStop || closesLine))
+                        {
+                            var startStop = stopById[stopIds[s]];
+                            var endStop = stopById[stopIds[hasNextStop ? s + 1 : 0]];
+                            derived.AddRouteCarrier(
+                                entity.Index,
+                                transitKind,
+                                lineTypeKeyword + " Line",
+                                startStop.NetworkNodeId,
+                                endStop.NetworkNodeId,
+                                legPoints,
+                                legPathSegmentIds);
                         }
                     }
 
                     var geometryKind = pathSegmentIds.Count > 0 ? "path_chain" : "stop_direct";
 
-                    // serving_line_ids回填（route遍历到谁就记谁，升序写）。
                     var seenStops = new HashSet<int>();
                     for (var s = 0; s < stopIds.Count; s++)
                     {
@@ -442,7 +445,6 @@ namespace CSLModernMap.Systems
                         }
                     }
 
-                    // 线名：自定义名 → 翻译键 → 空串。
                     string lineName;
                     string lineNameSource;
                     ResolveLineName(nameSystem, entity, prefabName,
@@ -451,7 +453,6 @@ namespace CSLModernMap.Systems
 
                     var color = em.GetComponentData<Game.Routes.Color>(entity).m_Color;
 
-                    // 写TransitLine
                     if (lineWritten > 0)
                     {
                         linesJson.AppendLine(",");
@@ -462,7 +463,6 @@ namespace CSLModernMap.Systems
                     CmmJson.AppendString(linesJson, lineName);
                     linesJson.Append(", \"kind\": ");
                     CmmJson.AppendString(linesJson, MapStopKind(lineData.m_TransportType));
-                    // Color32按RGBA字节序直读；0也原样保留，不转默认色。
                     linesJson.Append(", \"user_color\": [")
                         .Append(color.r.ToString(CultureInfo.InvariantCulture)).Append(", ")
                         .Append(color.g.ToString(CultureInfo.InvariantCulture)).Append(", ")
@@ -470,7 +470,6 @@ namespace CSLModernMap.Systems
                         .Append(color.a.ToString(CultureInfo.InvariantCulture))
                         .Append("], \"bidirectional\": null, \"branch\": ");
                     CmmJson.AppendString(linesJson, "");
-                    // source_raw is a renderer type keyword; prefab names live in extensions.cs2.
                     CmmJson.AppendProperty(linesJson, "source_raw", lineTypeKeyword);
                     linesJson.Append('}');
                     lineWritten++;
@@ -484,7 +483,6 @@ namespace CSLModernMap.Systems
                     linePrefabsJson.Append(": ");
                     CmmJson.AppendString(linePrefabsJson, prefabName);
 
-                    // 写Route（id与line共用实体Index，两个集合各自内部唯一）
                     if (routeWritten > 0)
                     {
                         routesJson.AppendLine(",");
@@ -567,10 +565,6 @@ namespace CSLModernMap.Systems
             }
         }
 
-        /// <summary>
-        /// 站点名：CustomName自定义名（source=custom）→ 渲染标签（source=game）→ 空。
-        /// GetRenderedLabelName会同时覆盖自定义名，source要靠CustomName组件区分。
-        /// </summary>
         private static void ResolveEntityName(
             Game.UI.NameSystem nameSystem,
             Entity entity,
@@ -601,7 +595,6 @@ namespace CSLModernMap.Systems
             }
         }
 
-        /// <summary>线路名：自定义名 → 翻译键Assets.ROUTE_NAME[prefab名] 替换 {NUMBER} → 空串（不伪造）。</summary>
         private static void ResolveLineName(
             Game.UI.NameSystem nameSystem,
             Entity entity,

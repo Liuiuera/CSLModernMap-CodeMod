@@ -4,11 +4,11 @@ using Game.Settings;
 
 namespace CSLModernMap.Settings
 {
-    /// <summary>模组选项页；耗时操作只在属性setter中排队。</summary>
     [FileLocation(nameof(CSLModernMap))]
     [SettingsUITabOrder(MainTab)]
     [SettingsUIGroupOrder(StatusGroup, RendererGroup, ExportGroup, AboutGroup)]
     [SettingsUIShowGroupName(StatusGroup, RendererGroup, ExportGroup, AboutGroup)]
+    /// <summary>定义模组设置及选项页操作</summary>
     public sealed class CSLModernMapSettings : ModSetting
     {
         internal const string MainTab = "Main";
@@ -46,6 +46,14 @@ namespace CSLModernMap.Settings
         public bool InstallRenderer
         {
             set => Systems.MapExportUISystem.RequestInstallRenderer();
+        }
+
+        [SettingsUISection(MainTab, RendererGroup)]
+        [SettingsUIButton]
+        [SettingsUIHideByCondition(typeof(CSLModernMapSettings), nameof(IsRendererUnsupported))]
+        public bool OpenRendererFolder
+        {
+            set => Systems.MapExportUISystem.RequestOpenRendererFolder();
         }
 
         [SettingsUISection(MainTab, ExportGroup)]

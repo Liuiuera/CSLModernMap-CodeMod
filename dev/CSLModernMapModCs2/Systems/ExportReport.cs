@@ -29,7 +29,8 @@ namespace CSLModernMap.Systems
             int buildingCount,
             int stopCount,
             int lineCount,
-            int issueCount)
+            int issueCount,
+            string firstIssue)
         {
             Path = path;
             LocalTime = localTime;
@@ -39,6 +40,7 @@ namespace CSLModernMap.Systems
             StopCount = stopCount;
             LineCount = lineCount;
             IssueCount = issueCount;
+            FirstIssue = firstIssue;
         }
 
         internal string Path { get; }
@@ -55,8 +57,9 @@ namespace CSLModernMap.Systems
 
         internal int LineCount { get; }
 
-        /// <summary>文件里 <c>issues</c> 数组的元素个数（error + warn合计）。</summary>
         internal int IssueCount { get; }
+
+        internal string FirstIssue { get; }
 
         internal string FileName
         {
@@ -70,7 +73,7 @@ namespace CSLModernMap.Systems
         }
     }
 
-    /// <summary>保存导出状态并生成选项页与通知文案。</summary>
+    /// <summary>记录导出状态并生成结果文案</summary>
     internal static class ExportReport
     {
         private static ExportState s_State = ExportState.Idle;
@@ -82,11 +85,11 @@ namespace CSLModernMap.Systems
         private static int s_Stops;
         private static int s_Lines;
         private static int s_Issues;
+        private static string s_FirstIssue = "";
         private static string s_Reason = "";
 
         private static bool s_RecoverAttempted;
 
-        /// <summary>导出排队或进行中。</summary>
         internal static bool IsBusy => s_State == ExportState.Queued || s_State == ExportState.Running;
 
         internal static void MarkQueued()
@@ -111,6 +114,7 @@ namespace CSLModernMap.Systems
             s_Stops = result.StopCount;
             s_Lines = result.LineCount;
             s_Issues = result.IssueCount;
+            s_FirstIssue = result.FirstIssue;
             s_Reason = "";
         }
 
@@ -135,8 +139,8 @@ namespace CSLModernMap.Systems
                     case ExportState.SucceededWithWarnings:
                         return string.Format(
                             CultureInfo.InvariantCulture,
-                            Chinese ? "导出完成，但有警告（{0} 条）" : "Export finished with {0} warning(s)",
-                            s_Issues);
+                            Chinese ? "导出完成，{0} 条警告，首条：{1}" : "Export finished with {0} warning(s), first: {1}",
+                            s_Issues, s_FirstIssue);
                     case ExportState.Failed:
                         return (Chinese ? "导出失败：" : "Export failed: ") + s_Reason;
                     default:
@@ -195,9 +199,11 @@ namespace CSLModernMap.Systems
             {
                 return Chinese
                     ? string.Format(CultureInfo.InvariantCulture,
-                        "导出完成，但有警告（{0} 条）：{1}", result.IssueCount, result.FileName)
+                        "导出完成，{0} 条警告，首条：{1}\n文件：{2}",
+                        result.IssueCount, result.FirstIssue, result.FileName)
                     : string.Format(CultureInfo.InvariantCulture,
-                        "Export finished with {0} warning(s): {1}", result.IssueCount, result.FileName);
+                        "Export finished with {0} warning(s), first: {1}\nFile: {2}",
+                        result.IssueCount, result.FirstIssue, result.FileName);
             }
 
             return Chinese
@@ -239,7 +245,6 @@ namespace CSLModernMap.Systems
         internal static string CopyFailed(string directory) =>
             Chinese ? "复制失败，请手动记录：" + directory : "Copy failed; the path is: " + directory;
 
-        /// <summary>异常通知短原因</summary>
         internal static string ShortReason(Exception e)
         {
             if (e == null)
@@ -286,7 +291,6 @@ namespace CSLModernMap.Systems
             s_Time = newest.Value.LocalTime;
         }
 
-        /// <summary>取值时动态判断语言</summary>
         private static bool Chinese
         {
             get

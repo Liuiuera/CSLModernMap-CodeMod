@@ -3,6 +3,7 @@ using UnityEngine;
 
 namespace CSLModernMap.Systems
 {
+    /// <summary>打开导出文件所在文件夹</summary>
     internal static class ShellFolder
     {
         internal static bool TryReveal(string directory) =>

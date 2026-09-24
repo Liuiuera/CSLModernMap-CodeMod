@@ -5,6 +5,7 @@ using Colossal.PSI.Environment;
 
 namespace CSLModernMap.Systems
 {
+    /// <summary>管理导出文件路径</summary>
     internal static class ExportPaths
     {
         private const string ModsDataFolderName = "ModsData";
@@ -12,8 +13,6 @@ namespace CSLModernMap.Systems
         private const string RootFolderName = "CSLModernMap";
 
         internal const string RendererFolderName = "Renderer";
-
-        internal const string FilePrefix = "CSLModernMap-CS2-";
 
         internal const string FileSuffix = ".cmm.gz";
 
@@ -26,9 +25,6 @@ namespace CSLModernMap.Systems
             }
         }
 
-        /// <summary>
-        /// 查看器安装目录。不能放在LocalLow：其低完整性标签会阻止CLR加载查看器程序集。
-        /// </summary>
         internal static string RendererDirectory
         {
             get
@@ -45,9 +41,26 @@ namespace CSLModernMap.Systems
             return directory;
         }
 
-        internal static string BuildFileName(DateTime localTime)
+        internal static string BuildFileName(string cityName, DateTime localTime)
         {
-            return FilePrefix
+            var chars = (cityName ?? "").Trim().ToCharArray();
+            var invalid = Path.GetInvalidFileNameChars();
+            for (var i = 0; i < chars.Length; i++)
+            {
+                if (char.IsControl(chars[i]) || Array.IndexOf(invalid, chars[i]) >= 0
+                    || "<>:\"/\\|?*".IndexOf(chars[i]) >= 0)
+                {
+                    chars[i] = '_';
+                }
+            }
+
+            var safeName = new string(chars).Trim().TrimEnd('.');
+            if (string.IsNullOrWhiteSpace(safeName))
+            {
+                safeName = "City";
+            }
+
+            return safeName + "-"
                 + localTime.ToString("yyyyMMdd-HHmmss-fff", CultureInfo.InvariantCulture)
                 + FileSuffix;
         }
@@ -61,7 +74,6 @@ namespace CSLModernMap.Systems
             return path + ".invalid";
         }
 
-        /// <summary>目录里最新的一份成功导出，用于恢复状态栏；任何异常吞掉返回null。</summary>
         internal static ExportFileInfo? FindNewestExport()
         {
             try

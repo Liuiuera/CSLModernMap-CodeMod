@@ -2,6 +2,7 @@ using System.Text;
 
 namespace CSLModernMap.Systems
 {
+    /// <summary>收集导出过程中的数据问题</summary>
     internal sealed class CmmIssueCollector
     {
         private readonly StringBuilder m_Json = new StringBuilder(256);

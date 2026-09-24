@@ -17,10 +17,9 @@ using UnityEngine.Scripting;
 
 namespace CSLModernMap.Systems
 {
-    /// <summary>模组选项页与CMM导出流程之间的边界；各数据域的采集由独立导出器完成。</summary>
+    /// <summary>协调地图导出与选项页操作</summary>
     public sealed partial class MapExportUISystem : GameSystemBase
     {
-        /// <summary>CS2一个分区单元格 = 8x8米（官方资产规范的Lot Size换算基准）。</summary>
         private const float CellSizeMeters = 8f;
 
         private static MapExportUISystem s_Instance;
@@ -39,11 +38,14 @@ namespace CSLModernMap.Systems
 
         private static bool s_OpenFolderRequested;
 
+        private static bool s_OpenRendererFolderRequested;
+
         private static bool s_CopyFolderRequested;
 
         private EntityQuery m_NodeQuery;
         private EntityQuery m_EdgeQuery;
         private EntityQuery m_BuildingQuery;
+        private EntityQuery m_DistrictQuery;
 
         private NativeHashMap<Entity, LotSizeEntry> m_LotSizeCache;
 
@@ -55,17 +57,32 @@ namespace CSLModernMap.Systems
 
         private readonly Dictionary<string, int> m_SubServiceCounts = new Dictionary<string, int>();
 
-        // Network semantics are cached by composition because ground, elevated and tunnel
-        // variants of one prefab can have different widths and lanes.
-
         private readonly Dictionary<Entity, NetCompositionInfo> m_NetCompositionCache =
             new Dictionary<Entity, NetCompositionInfo>();
 
         private readonly Dictionary<Entity, string> m_RoadSizeClassCache = new Dictionary<Entity, string>();
 
+        private readonly Dictionary<string, int> m_NetworkKindCounts = new Dictionary<string, int>();
+
+        private int m_SkippedAirspaceNetworkCount;
+
+        private int m_SkippedMarkerNetworkCount;
+
+        private int m_CustomRoadNameCount;
+
         private int m_ExcludedNonBuildingCount;
 
         private int m_ExcludedNoGeometryCount;
+
+        private int m_CustomBuildingNameCount;
+
+        private readonly HashSet<int> m_ExportedBuildingIds = new HashSet<int>();
+
+        private readonly Dictionary<int, List<int>> m_ExportedBuildingChildren =
+            new Dictionary<int, List<int>>();
+
+        private readonly Dictionary<int, float2> m_ExportedBuildingPositions =
+            new Dictionary<int, float2>();
 
         private Game.Prefabs.PrefabSystem m_PrefabSystem;
 
@@ -103,9 +120,15 @@ namespace CSLModernMap.Systems
                     return IsChinese ? "随包文件缺失" : "Bundled renderer files are missing";
                 }
 
-                return RendererLauncher.IsInstalled
-                    ? (IsChinese ? "已就绪 · " : "Ready · ") + RendererLauncher.PayloadVersion
-                    : (IsChinese ? "未安装" : "Not installed");
+                if (RendererLauncher.IsInstalled)
+                {
+                    return (IsChinese ? "已就绪 · " : "Ready · ") + RendererLauncher.PayloadVersion;
+                }
+
+                return RendererLauncher.HasOlderInstallation
+                    ? (IsChinese ? "待更新至 " : "Update available: ") + RendererLauncher.PayloadVersion
+                        + (IsChinese ? "，点击下方安装 / 更新" : "; use Install / Update below")
+                    : (IsChinese ? "未安装，点击下方安装 / 更新" : "Not installed; use Install / Update below");
             }
         }
 
@@ -123,9 +146,14 @@ namespace CSLModernMap.Systems
             {
                 All = new[]
                 {
-                    ComponentType.ReadOnly<Game.Buildings.Building>(),
                     ComponentType.ReadOnly<Game.Objects.Transform>(),
                     ComponentType.ReadOnly<Game.Prefabs.PrefabRef>()
+                },
+                Any = new[]
+                {
+                    ComponentType.ReadOnly<Game.Buildings.Building>(),
+                    ComponentType.ReadOnly<Game.Buildings.Extension>(),
+                    ComponentType.ReadOnly<Game.Buildings.ServiceUpgrade>()
                 },
                 None = new[]
                 {
@@ -134,10 +162,21 @@ namespace CSLModernMap.Systems
                 }
             });
 
-            // prefab名只能经PrefabSystem解析。
-            m_PrefabSystem = World.GetOrCreateSystemManaged<Game.Prefabs.PrefabSystem>();
+            m_DistrictQuery = GetEntityQuery(new EntityQueryDesc
+            {
+                All = new[]
+                {
+                    ComponentType.ReadOnly<Game.Areas.Area>(),
+                    ComponentType.ReadOnly<Game.Areas.District>()
+                },
+                None = new[]
+                {
+                    ComponentType.ReadOnly<Game.Tools.Temp>(),
+                    ComponentType.ReadOnly<Game.Common.Deleted>()
+                }
+            });
 
-            Mod.log.Info("[export] 模组选项页导出服务已就绪");
+            m_PrefabSystem = World.GetOrCreateSystemManaged<Game.Prefabs.PrefabSystem>();
         }
 
         protected override void OnDestroy()
@@ -168,6 +207,12 @@ namespace CSLModernMap.Systems
                     message => ShowNotification(ResultNoticeId, message));
             }
 
+            if (s_OpenRendererFolderRequested)
+            {
+                s_OpenRendererFolderRequested = false;
+                RendererLauncher.OpenRendererDirectory();
+            }
+
             if (s_CopyFolderRequested)
             {
                 s_CopyFolderRequested = false;
@@ -176,7 +221,6 @@ namespace CSLModernMap.Systems
                     message => ShowNotification(ResultNoticeId, message));
             }
 
-            // Delay the heavy export by one frame so the queued notification can render.
             if (m_ExportArmed)
             {
                 m_ExportArmed = false;
@@ -192,7 +236,6 @@ namespace CSLModernMap.Systems
             m_ExportRequested = false;
             m_ExportArmed = true;
             ExportReport.MarkQueued();
-            Mod.log.Info("[export] 已排队：下一帧开始导出当前城市");
             ShowNotification(StartNoticeId, ExportReport.StartNotice);
         }
 
@@ -209,19 +252,17 @@ namespace CSLModernMap.Systems
             });
         }
 
-        /// <summary>「出当前城市按钮只置位。</summary>
         internal static void RequestExport()
         {
-            QueueExport(false, "[export] 收到模组选项页导出请求");
+            QueueExport(false);
         }
 
-        /// <summary>导出成功后才启动查看器</summary>
         internal static void RequestExportAndOpen()
         {
-            QueueExport(true, "[export] 收到“导出并打开”请求");
+            QueueExport(true);
         }
 
-        private static void QueueExport(bool openAfterwards, string logMessage)
+        private static void QueueExport(bool openAfterwards)
         {
             if (s_Instance == null)
             {
@@ -231,17 +272,21 @@ namespace CSLModernMap.Systems
 
             if (!s_Instance.m_ExportRequested && !s_Instance.m_ExportArmed)
             {
+                if (openAfterwards && RendererLauncher.HasPayload
+                    && !RendererLauncher.IsInstalled && RendererLauncher.HasOlderInstallation)
+                {
+                    s_Instance.ShowNotification(RendererStartNoticeId,
+                        (IsChinese ? "查看器待更新至 " : "Renderer update available: ")
+                        + RendererLauncher.PayloadVersion
+                        + (IsChinese ? "，导出后将自动更新" : "; updating after export"));
+                }
+
                 s_Instance.m_OpenAfterExport = openAfterwards;
                 s_Instance.m_ExportRequested = true;
                 ExportReport.MarkQueued();
-                Mod.log.Info(logMessage);
             }
         }
 
-        /// <summary>
-        /// 「安装 / 更新查看器」按钮：把随包载荷解压到 <c>%LOCALAPPDATA%\CSLModernMap\Renderer</c>。
-        /// 后台线程解压，通知由 OnUpdate 转回游戏线程。
-        /// </summary>
         internal static void RequestInstallRenderer()
         {
             if (!RendererLauncher.IsSupported || s_RendererWorkRunning)
@@ -260,21 +305,17 @@ namespace CSLModernMap.Systems
             ShowNotificationOnGameThread(RendererStartNoticeId, InstallingRendererNotice);
             StartRendererWork(() =>
             {
-                RendererLauncher.EnsureInstalled();
+                RendererLauncher.EnsureInstalled(true);
                 PostRendererNotice(IsChinese
                     ? "查看器已就绪（" + RendererLauncher.PayloadVersion + "）"
                     : "Renderer ready (" + RendererLauncher.PayloadVersion + ")");
             });
         }
 
-        /// <summary>
-        /// 导出成功后的收尾：启动查看器打开文件；还没装就先装再启动，全在后台线程。
-        /// </summary>
         private void OpenInRenderer(string exportPath)
         {
             if (!RendererLauncher.IsSupported)
             {
-                Mod.log.Info("[renderer] 当前平台不支持查看器，跳过启动");
                 return;
             }
 
@@ -287,9 +328,13 @@ namespace CSLModernMap.Systems
             }
 
             var installing = !RendererLauncher.IsInstalled;
+            var updating = installing && RendererLauncher.HasOlderInstallation;
             if (installing)
             {
-                ShowNotification(RendererStartNoticeId, InstallingRendererNotice);
+                ShowNotification(RendererStartNoticeId, updating
+                    ? (IsChinese ? "正在更新查看器至 " : "Updating renderer to ")
+                        + RendererLauncher.PayloadVersion
+                    : InstallingRendererNotice);
             }
 
             StartRendererWork(() =>
@@ -305,9 +350,6 @@ namespace CSLModernMap.Systems
             });
         }
 
-        /// <summary>
-        /// 在后台线程跑一次查看器工作。
-        /// </summary>
         private static void StartRendererWork(Action work)
         {
             lock (typeof(MapExportUISystem))
@@ -374,7 +416,6 @@ namespace CSLModernMap.Systems
             }
         }
 
-        /// <summary>给静态入口用的通知出口：主菜单里没有系统实例，就没有通知，只有日志。</summary>
         private static void ShowNotificationOnGameThread(string notificationId, string message)
         {
             var instance = s_Instance;
@@ -406,6 +447,11 @@ namespace CSLModernMap.Systems
             s_CopyFolderRequested = true;
         }
 
+        internal static void RequestOpenRendererFolder()
+        {
+            s_OpenRendererFolderRequested = true;
+        }
+
         private void ProcessExport()
         {
             ExportReport.MarkRunning();
@@ -416,7 +462,6 @@ namespace CSLModernMap.Systems
                 {
                     var noCity = ExportReport.NoCityReason;
                     Mod.log.Warn("[export] 已拒绝请求：当前没有道路节点");
-                    m_OpenAfterExport = false;
                     ExportReport.MarkFailed(noCity);
                     ShowNotification(ResultNoticeId, ExportReport.FailureNotice(noCity));
                     return;
@@ -444,7 +489,6 @@ namespace CSLModernMap.Systems
             catch (Exception e)
             {
                 Mod.log.Error("[export] 导出失败: " + e);
-                m_OpenAfterExport = false;
                 var reason = ExportReport.ShortReason(e);
                 ExportReport.MarkFailed(reason);
                 ShowNotification(ResultNoticeId, ExportReport.FailureNotice(reason));
@@ -475,7 +519,99 @@ namespace CSLModernMap.Systems
                 Mod.log.Warn("[export] 读取城市名失败: " + e.Message);
             }
 
-            return "Cities: Skylines II";
+            return "";
+        }
+
+        private Game.UI.NameSystem GetNameSystem(string context)
+        {
+            try
+            {
+                return World.GetOrCreateSystemManaged<Game.UI.NameSystem>();
+            }
+            catch (Exception e)
+            {
+                Mod.log.Warn("[" + context + "] NameSystem不可用: "
+                    + e.GetType().Name + ": " + e.Message);
+                return null;
+            }
+        }
+
+        private static bool TryGetCustomDisplayName(
+            Game.UI.NameSystem nameSystem,
+            Entity entity,
+            string context,
+            out string name)
+        {
+            name = "";
+            if (nameSystem == null || entity == Entity.Null)
+            {
+                return false;
+            }
+
+            try
+            {
+                string customName;
+                if (!nameSystem.TryGetCustomName(entity, out customName)
+                    || string.IsNullOrEmpty(customName))
+                {
+                    return false;
+                }
+
+                name = nameSystem.GetRenderedLabelName(entity) ?? customName;
+                if (string.IsNullOrEmpty(name))
+                {
+                    name = customName;
+                }
+                return !string.IsNullOrEmpty(name);
+            }
+            catch (Exception e)
+            {
+                Mod.log.Warn("[" + context + "] 自定义名称解析失败: "
+                    + e.GetType().Name + ": " + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>分别读取显示名称与自定义名称来源以避免混淆自动命名</summary>
+        private static string GetRenderedDisplayName(
+            Game.UI.NameSystem nameSystem,
+            Entity entity,
+            string context,
+            out bool isCustom)
+        {
+            isCustom = false;
+            if (nameSystem == null || entity == Entity.Null)
+            {
+                return "";
+            }
+
+            string rendered;
+            try
+            {
+                rendered = nameSystem.GetRenderedLabelName(entity) ?? "";
+            }
+            catch (Exception e)
+            {
+                Mod.log.Warn("[" + context + "] 显示名称解析失败: "
+                    + e.GetType().Name + ": " + e.Message);
+                return "";
+            }
+
+            try
+            {
+                string customName;
+                isCustom = nameSystem.TryGetCustomName(entity, out customName)
+                    && !string.IsNullOrEmpty(customName);
+                return string.IsNullOrEmpty(rendered) && isCustom
+                    ? customName
+                    : rendered;
+            }
+            catch (Exception e)
+            {
+                Mod.log.Warn("[" + context + "] 名称来源判定失败: "
+                    + e.GetType().Name + ": " + e.Message);
+                return rendered;
+            }
         }
 
 
@@ -495,8 +631,6 @@ namespace CSLModernMap.Systems
             var name = "";
             if (m_PrefabSystem != null)
             {
-                // UI分类实体（RoadsSmallRoads这类）只有PrefabSystem.GetPrefabName认得，
-                // TryGetPrefab对它拿不到。
                 name = m_PrefabSystem.GetPrefabName(prefab) ?? "";
                 if (name.Length == 0)
                 {
@@ -512,20 +646,25 @@ namespace CSLModernMap.Systems
             return name;
         }
 
-        private string GetNetworkKind(Entity entity)
+        private string GetNetworkKind(Entity entity, NetCompositionInfo section)
         {
-            if (EntityManager.HasComponent<Game.Net.TramTrack>(entity)) return "TRAM";
-            if (EntityManager.HasComponent<Game.Net.SubwayTrack>(entity)) return "METRO";
-            if (EntityManager.HasComponent<Game.Net.TrainTrack>(entity)) return "RAIL";
+            if (section.AirspaceOnly) return null;
+            if (section.Waterway) return null;
+            if (EntityManager.HasComponent<Game.Net.Marker>(entity)
+                && !section.Taxiway
+                && !section.Runway) return null;
+            if (section.Runway || section.Taxiway) return "ROAD";
+            if (section.Pathway) return "BEAUTIFICATION";
             if (EntityManager.HasComponent<Game.Net.Road>(entity)) return "ROAD";
+            if (section.TramLanes > 0
+                || EntityManager.HasComponent<Game.Net.TramTrack>(entity)) return "TRAM";
+            if (section.SubwayLanes > 0
+                || EntityManager.HasComponent<Game.Net.SubwayTrack>(entity)) return "METRO";
+            if (section.TrainLanes > 0
+                || EntityManager.HasComponent<Game.Net.TrainTrack>(entity)) return "RAIL";
             return null;
         }
 
-        /// <summary>
-        /// 节点的路面模式提示。节点是连接点、没有横断面，只能退回到
-        /// <c>Game.Net.Elevation.m_Elevation</c>（相对地形的高程，贴地接近0）。
-        /// 这只是 <c>mode_hint</c> 一个提示字段；路段的真实模式取自横断面旗标，与这个阈值无关。
-        /// </summary>
         private string GetNodeModeHint(Entity node)
         {
             if (!EntityManager.HasComponent<Game.Net.Elevation>(node))
@@ -557,7 +696,6 @@ namespace CSLModernMap.Systems
                 .Append(", \"z\": ").Append(FormatFloat(value.z)).Append('}');
         }
 
-        /// <summary>合并两段完整的JSON数组文本；任一为空数组时直接返回另一段。</summary>
         private static string CombineIssueArrays(string first, string second)
         {
             if (string.IsNullOrEmpty(first) || first == "[]")
@@ -583,7 +721,6 @@ namespace CSLModernMap.Systems
             return value.ToString("0.###", CultureInfo.InvariantCulture);
         }
 
-        // Start and result use distinct IDs so one notification cannot replace the other.
         private const string StartNoticeId = "CSLModernMap.Export.Start";
 
         private const string ResultNoticeId = "CSLModernMap.Export.Result";

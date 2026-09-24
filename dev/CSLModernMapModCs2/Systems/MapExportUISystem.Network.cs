@@ -16,6 +16,7 @@ using UnityEngine.Scripting;
 
 namespace CSLModernMap.Systems
 {
+    /// <summary>采集道路和网络数据</summary>
     public sealed partial class MapExportUISystem
     {
         private int AppendNodes(StringBuilder json, HashSet<Entity> exportedNodes)
@@ -54,30 +55,38 @@ namespace CSLModernMap.Systems
             }
         }
 
-        /// <summary>导出路网及其横断面语义，并建立lane到路段的映射。</summary>
         private int AppendNetworks(
             StringBuilder json,
             HashSet<Entity> exportedNodes,
             HashSet<Entity> exportedNetworks,
-            Dictionary<Entity, int> laneToNetworkId)
+            Cs2DerivedNetworkState derived,
+            TrafficExport traffic)
         {
             m_NetCompositionCache.Clear();
             m_RoadSizeClassCache.Clear();
+            m_NetworkKindCounts.Clear();
+            m_SkippedAirspaceNetworkCount = 0;
+            m_SkippedMarkerNetworkCount = 0;
+            m_CustomRoadNameCount = 0;
 
             var entities = m_EdgeQuery.ToEntityArray(Allocator.Temp);
+            var geometryContext = Cs2Geometry.BuildRoadGeometryContext(EntityManager);
+            var nameSystem = GetNameSystem("networks");
+            var roadNameCache = new Dictionary<Entity, string>();
             var written = 0;
             try
             {
+                var sorted = new List<Entity>(entities.Length);
                 for (var i = 0; i < entities.Length; i++)
                 {
-                    var entity = entities[i];
-                    if (!EntityManager.HasComponent<Game.Net.Curve>(entity))
-                    {
-                        continue;
-                    }
+                    sorted.Add(entities[i]);
+                }
 
-                    var kind = GetNetworkKind(entity);
-                    if (kind == null)
+                sorted.Sort((a, b) => a.Index.CompareTo(b.Index));
+                for (var i = 0; i < sorted.Count; i++)
+                {
+                    var entity = sorted[i];
+                    if (!EntityManager.HasComponent<Game.Net.Curve>(entity))
                     {
                         continue;
                     }
@@ -94,28 +103,85 @@ namespace CSLModernMap.Systems
                     var name = GetPrefabName(prefab);
 
                     var section = GetNetCompositionInfo(entity, prefab);
+                    var kind = GetNetworkKind(entity, section);
+                    if (kind == null)
+                    {
+                        if (section.AirspaceOnly)
+                        {
+                            m_SkippedAirspaceNetworkCount++;
+                        }
+                        else if (EntityManager.HasComponent<Game.Net.Marker>(entity))
+                        {
+                            m_SkippedMarkerNetworkCount++;
+                        }
+                        continue;
+                    }
+
+                    var geometry = Cs2Geometry.BuildRoadGeometry(
+                        EntityManager,
+                        geometryContext,
+                        entity,
+                        edge,
+                        curve,
+                        section.Width,
+                        IsSurfaceNetworkKind(kind));
+                    var points = geometry.Centerline;
+                    if (points.Count < 2)
+                    {
+                        continue;
+                    }
 
                     var width = section.Width;
                     var mode = section.Form;
-                    var level = kind == "ROAD" ? GetRoadLevel(section) : null;
+                    var level = GetNetworkLevel(kind, section);
+                    var displayName = "";
+                    if (kind == "ROAD" && EntityManager.HasComponent<Game.Net.Road>(entity))
+                    {
+                        var nameEntity = entity;
+                        if (EntityManager.HasComponent<Game.Net.Aggregated>(entity))
+                        {
+                            var aggregate = EntityManager
+                                .GetComponentData<Game.Net.Aggregated>(entity)
+                                .m_Aggregate;
+                            if (aggregate != Entity.Null)
+                            {
+                                nameEntity = aggregate;
+                            }
+                        }
+
+                        if (!roadNameCache.TryGetValue(nameEntity, out displayName))
+                        {
+                            if (!TryGetCustomDisplayName(
+                                nameSystem, nameEntity, "networks", out displayName))
+                            {
+                                displayName = "";
+                            }
+                            roadNameCache[nameEntity] = displayName;
+                        }
+                    }
                     var direction = section.Forward && section.Backward
                         ? 0
                         : (section.Forward ? 1 : (section.Backward ? -1 : 0));
 
-                    exportedNetworks.Add(entity);
-                    if (EntityManager.HasComponent<Game.Net.SubLane>(entity))
-                    {
-                        var subLanes = EntityManager.GetBuffer<Game.Net.SubLane>(entity, true);
-                        for (var laneIndex = 0; laneIndex < subLanes.Length; laneIndex++)
-                        {
-                            var lane = subLanes[laneIndex].m_SubLane;
-                            if (lane != Entity.Null)
-                            {
-                                laneToNetworkId[lane] = entity.Index;
-                            }
-                        }
-                    }
+                    derived.AddModes(
+                        entity.Index,
+                        new Cs2DerivedNetworkState.ModeRecord(
+                            section.CarLanes,
+                            section.BicycleLanes,
+                            section.BusLanes,
+                            Math.Max(
+                                section.TramLanes,
+                                EntityManager.HasComponent<Game.Net.TramTrack>(entity) ? 1 : 0),
+                            Math.Max(
+                                section.TrainLanes,
+                                EntityManager.HasComponent<Game.Net.TrainTrack>(entity) ? 1 : 0),
+                            Math.Max(
+                                section.SubwayLanes,
+                                EntityManager.HasComponent<Game.Net.SubwayTrack>(entity) ? 1 : 0)));
 
+                    exportedNetworks.Add(entity);
+                    if (kind == "ROAD")
+                        traffic.AddRoad(EntityManager, entity, points, width, displayName, name, level);
                     if (written > 0)
                     {
                         json.AppendLine(",");
@@ -127,8 +193,15 @@ namespace CSLModernMap.Systems
                     json.Append(", \"start_id\": ").Append(edge.m_Start.Index)
                         .Append(", \"end_id\": ").Append(edge.m_End.Index)
                         .Append(", \"geometry\": {\"points\": [");
-                    AppendCurve(json, curve);
-                    json.Append("]}, \"mode\": ");
+                    AppendPoints(json, points);
+                    json.Append("]}");
+                    if (geometry.Footprint.Count >= 4)
+                    {
+                        json.Append(", \"footprint\": {\"points\": [");
+                        AppendFootprintPoints(json, geometry.Footprint);
+                        json.Append("]}");
+                    }
+                    json.Append(", \"mode\": ");
                     CmmJson.AppendString(json, mode);
                     json.Append(", \"width\": ").Append(FormatFloat(width));
                     if (level != null)
@@ -150,13 +223,27 @@ namespace CSLModernMap.Systems
                         json.Append(", \"lane_summary\": null");
                     }
 
-                    // name与source_raw都取prefab资产名；display_name留给玩家自定义名
                     json.Append(", \"transit_for\": null, \"path_segment_ids\": [], \"platform\": false");
                     CmmJson.AppendProperty(json, "name", name);
-                    CmmJson.AppendProperty(json, "display_name", "");
+                    CmmJson.AppendProperty(json, "display_name", displayName);
                     CmmJson.AppendProperty(json, "source_raw", name);
                     json.Append('}');
                     written++;
+                    if (!string.IsNullOrEmpty(displayName))
+                    {
+                        m_CustomRoadNameCount++;
+                    }
+                    int kindCount;
+                    m_NetworkKindCounts.TryGetValue(kind, out kindCount);
+                    m_NetworkKindCounts[kind] = kindCount + 1;
+
+                    AddTrackOverlays(
+                        derived,
+                        entity,
+                        kind,
+                        edge,
+                        section,
+                        points);
                 }
 
                 if (written > 0)
@@ -172,42 +259,65 @@ namespace CSLModernMap.Systems
             }
         }
 
-        /// <summary>
-        /// 一条路段的横断面语义。全部来自prefab的composition实体。
-        /// 读不到横断面的段（堤岸、纯装饰件）：宽度记0、<c>HasLanes</c> 为false，
-        /// </summary>
         private readonly struct NetCompositionInfo
         {
             internal NetCompositionInfo(
                 float width,
                 bool hasLanes,
                 int carLanes,
+                int bicycleLanes,
+                int busLanes,
+                int tramLanes,
+                int trainLanes,
+                int subwayLanes,
                 bool hasPedestrianLanes,
                 bool forward,
                 bool backward,
                 string form,
                 bool highway,
                 bool taxiway,
+                bool runway,
+                bool airspaceOnly,
+                bool waterway,
+                bool pathway,
                 string sizeClass)
             {
                 Width = width > 0f ? width : 0f;
                 HasLanes = hasLanes;
                 CarLanes = carLanes;
+                BicycleLanes = bicycleLanes;
+                BusLanes = busLanes;
+                TramLanes = tramLanes;
+                TrainLanes = trainLanes;
+                SubwayLanes = subwayLanes;
                 HasPedestrianLanes = hasPedestrianLanes;
                 Forward = forward;
                 Backward = backward;
                 Form = form;
                 Highway = highway;
                 Taxiway = taxiway;
+                Runway = runway;
+                AirspaceOnly = airspaceOnly;
+                Waterway = waterway;
+                Pathway = pathway;
                 SizeClass = sizeClass ?? "";
             }
 
-            /// <summary>横断面宽度（米，全宽）</summary>
             internal float Width { get; }
 
             internal bool HasLanes { get; }
 
             internal int CarLanes { get; }
+
+            internal int BicycleLanes { get; }
+
+            internal int BusLanes { get; }
+
+            internal int TramLanes { get; }
+
+            internal int TrainLanes { get; }
+
+            internal int SubwayLanes { get; }
 
             internal bool HasPedestrianLanes { get; }
 
@@ -221,15 +331,17 @@ namespace CSLModernMap.Systems
 
             internal bool Taxiway { get; }
 
-            /// <summary>游戏道路面板的尺寸档（LARGE / MEDIUM / SMALL），非原版路留空。</summary>
+            internal bool Runway { get; }
+
+            internal bool AirspaceOnly { get; }
+
+            internal bool Waterway { get; }
+
+            internal bool Pathway { get; }
+
             internal string SizeClass { get; }
         }
 
-        /// <summary>
-        /// 读段用的横断面。路径：<c>Game.Net.Composition(段).m_Edge</c> to 横断面实体。
-        /// 按 横断面实体 缓存：同一prefab在地面 / 高架 / 隧道下是三个不同横断面，
-        /// 宽度本来就不同（Medium Road地面24 m / 高架20 m），缓存到prefab上会串。
-        /// </summary>
         private NetCompositionInfo GetNetCompositionInfo(Entity segment, Entity prefab)
         {
             var composition = Entity.Null;
@@ -238,8 +350,6 @@ namespace CSLModernMap.Systems
                 composition = EntityManager.GetComponentData<Game.Net.Composition>(segment).m_Edge;
             }
 
-            // composition为Null的段没有横断面，语义全部由prefab决定，不进缓存
-            // 否则第一个无横断面的prefab会把它的尺寸档污染给后面所有同类段。
             NetCompositionInfo cached;
             if (composition != Entity.Null
                 && m_NetCompositionCache.TryGetValue(composition, out cached))
@@ -251,6 +361,7 @@ namespace CSLModernMap.Systems
             var forward = false;
             var backward = false;
             var hasPedestrianLanes = false;
+            var waterway = false;
             var form = "GROUND";
 
             if (composition != Entity.Null
@@ -279,6 +390,11 @@ namespace CSLModernMap.Systems
 
             var hasLanes = false;
             var carLanes = 0;
+            var bicycleLanes = 0;
+            var busLanes = 0;
+            var tramLanes = 0;
+            var trainLanes = 0;
+            var subwayLanes = 0;
             if (composition != Entity.Null
                 && EntityManager.HasBuffer<Game.Prefabs.NetCompositionLane>(composition))
             {
@@ -288,21 +404,79 @@ namespace CSLModernMap.Systems
                 {
                     var flags = lanes[i].m_Flags;
 
-                    // Master represents a lane group, not a physical lane.
                     if ((flags & Game.Prefabs.LaneFlags.Master) != 0)
                     {
                         continue;
                     }
 
-                    if ((flags & Game.Prefabs.LaneFlags.Road) != 0)
+                    var lanePrefab = lanes[i].m_Lane;
+                    if (lanePrefab == Entity.Null)
                     {
-                        carLanes++;
+                        continue;
+                    }
+
+                    if (EntityManager.HasComponent<Game.Prefabs.NetLaneData>(lanePrefab))
+                    {
+                        var laneData = EntityManager.GetComponentData<Game.Prefabs.NetLaneData>(lanePrefab);
+                        if ((laneData.m_Flags & Game.Prefabs.LaneFlags.OnWater) != 0)
+                        {
+                            waterway = true;
+                        }
+                        if ((laneData.m_Flags & Game.Prefabs.LaneFlags.PublicOnly) != 0)
+                        {
+                            busLanes++;
+                        }
+                    }
+
+                    if (EntityManager.HasComponent<Game.Prefabs.CarLaneData>(lanePrefab))
+                    {
+                        var roadTypes = EntityManager
+                            .GetComponentData<Game.Prefabs.CarLaneData>(lanePrefab)
+                            .m_RoadTypes;
+                        if (roadTypes == Game.Net.RoadTypes.Bicycle)
+                        {
+                            bicycleLanes++;
+                        }
+
+                        if ((roadTypes & Game.Net.RoadTypes.Car) != 0)
+                        {
+                            carLanes++;
+                        }
+
+                        if ((roadTypes & Game.Net.RoadTypes.Watercraft) != 0)
+                        {
+                            waterway = true;
+                        }
+                    }
+
+                    if (EntityManager.HasComponent<Game.Prefabs.TrackLaneData>(lanePrefab))
+                    {
+                        var trackTypes = EntityManager
+                            .GetComponentData<Game.Prefabs.TrackLaneData>(lanePrefab)
+                            .m_TrackTypes;
+                        if ((trackTypes & Game.Net.TrackTypes.Tram) != 0)
+                        {
+                            tramLanes++;
+                        }
+
+                        if ((trackTypes & Game.Net.TrackTypes.Train) != 0)
+                        {
+                            trainLanes++;
+                        }
+
+                        if ((trackTypes & Game.Net.TrackTypes.Subway) != 0)
+                        {
+                            subwayLanes++;
+                        }
                     }
                 }
             }
 
             var highway = false;
             var taxiway = false;
+            var runway = false;
+            var airspaceOnly = false;
+            var pathway = false;
             if (composition != Entity.Null)
             {
                 if (EntityManager.HasComponent<Game.Prefabs.RoadComposition>(composition))
@@ -311,19 +485,40 @@ namespace CSLModernMap.Systems
                     highway = ((int)road.m_Flags & (int)Game.Prefabs.RoadFlags.UseHighwayRules) != 0;
                 }
 
-                taxiway = EntityManager.HasComponent<Game.Prefabs.TaxiwayComposition>(composition);
+                if (EntityManager.HasComponent<Game.Prefabs.TaxiwayComposition>(composition))
+                {
+                    var flags = EntityManager
+                        .GetComponentData<Game.Prefabs.TaxiwayComposition>(composition)
+                        .m_Flags;
+                    airspaceOnly = flags == Game.Prefabs.TaxiwayFlags.Airspace;
+                    runway = (flags & Game.Prefabs.TaxiwayFlags.Runway) != 0;
+                    taxiway = !airspaceOnly && !runway;
+                }
+
+                waterway = waterway
+                    || EntityManager.HasComponent<Game.Prefabs.WaterwayComposition>(composition);
+                pathway = EntityManager.HasComponent<Game.Prefabs.PathwayComposition>(composition);
             }
 
             var info = new NetCompositionInfo(
                 width,
                 hasLanes,
                 carLanes,
+                bicycleLanes,
+                busLanes,
+                tramLanes,
+                trainLanes,
+                subwayLanes,
                 hasPedestrianLanes,
                 forward,
                 backward,
                 form,
                 highway,
                 taxiway,
+                runway,
+                airspaceOnly,
+                waterway,
+                pathway,
                 GetRoadSizeClass(prefab));
             if (composition != Entity.Null)
             {
@@ -331,6 +526,88 @@ namespace CSLModernMap.Systems
             }
 
             return info;
+        }
+
+        private void AddTrackOverlays(
+            Cs2DerivedNetworkState derived,
+            Entity entity,
+            string baseKind,
+            Game.Net.Edge edge,
+            NetCompositionInfo section,
+            List<float3> points)
+        {
+            var hasTram = section.TramLanes > 0
+                || EntityManager.HasComponent<Game.Net.TramTrack>(entity);
+            var hasTrain = section.TrainLanes > 0
+                || EntityManager.HasComponent<Game.Net.TrainTrack>(entity);
+            var hasSubway = section.SubwayLanes > 0
+                || EntityManager.HasComponent<Game.Net.SubwayTrack>(entity);
+
+            if (hasTram && baseKind != "TRAM")
+            {
+                derived.AddTrackOverlay(
+                    entity.Index,
+                    "TRAM",
+                    section.Form,
+                    edge.m_Start.Index,
+                    edge.m_End.Index,
+                    points,
+                    section.Width);
+            }
+
+            if (hasTrain && baseKind != "RAIL")
+            {
+                derived.AddTrackOverlay(
+                    entity.Index,
+                    "RAIL",
+                    section.Form,
+                    edge.m_Start.Index,
+                    edge.m_End.Index,
+                    points,
+                    section.Width);
+            }
+
+            if (hasSubway && baseKind != "METRO")
+            {
+                derived.AddTrackOverlay(
+                    entity.Index,
+                    "METRO",
+                    section.Form,
+                    edge.m_Start.Index,
+                    edge.m_End.Index,
+                    points,
+                    section.Width);
+            }
+        }
+
+        private static void AppendPoints(StringBuilder json, List<float3> points)
+        {
+            for (var i = 0; i < points.Count; i++)
+            {
+                if (i > 0)
+                {
+                    json.Append(',');
+                }
+
+                AppendVec3(json, points[i]);
+            }
+        }
+
+        private static void AppendFootprintPoints(StringBuilder json, List<float3> points)
+        {
+            for (var i = 0; i < points.Count; i++)
+            {
+                if (i > 0)
+                {
+                    json.Append(',');
+                }
+
+                json.Append('[')
+                    .Append(FormatFloat(points[i].x))
+                    .Append(',')
+                    .Append(FormatFloat(points[i].z))
+                    .Append(']');
+            }
         }
 
         private Entity GetPrefabEntity(Entity entity)
@@ -343,10 +620,6 @@ namespace CSLModernMap.Systems
             return EntityManager.GetComponentData<Game.Prefabs.PrefabRef>(entity).m_Prefab;
         }
 
-        /// <summary>
-        /// 游戏道路面板的尺寸档：读 <c>UIObjectData.m_Group</c> 指向的分类实体名
-        /// 玩家自建或无分类的路返回空串
-        /// </summary>
         private string GetRoadSizeClass(Entity prefab)
         {
             if (prefab == Entity.Null)
@@ -383,9 +656,7 @@ namespace CSLModernMap.Systems
             return sizeClass;
         }
 
-        /// <summary>
-        /// 道路等级。判据全部来自横断面与prefab（高速旗标 / 车道构成 / 游戏面板尺寸档）
-        /// </summary>
+        /// <summary>依据横断面车道和道路尺寸确定道路等级</summary>
         private static string GetRoadLevel(NetCompositionInfo section)
         {
             if (section.Highway)
@@ -398,7 +669,6 @@ namespace CSLModernMap.Systems
                 return "SPECIAL";
             }
 
-            // 步行街 / 步道
             if (section.CarLanes == 0 && section.HasPedestrianLanes)
             {
                 return "BEAUTIFICATION";
@@ -410,13 +680,30 @@ namespace CSLModernMap.Systems
                 return "MAIN";
             }
 
-            // 非原版路（自建资产）没有面板分类，按宽度回退。
             if (section.SizeClass.Length == 0 && section.Width >= 24f)
             {
                 return "MAIN";
             }
 
             return "BRANCH";
+        }
+
+        private static bool IsSurfaceNetworkKind(string kind)
+        {
+            return kind == "ROAD"
+                || kind == "BEAUTIFICATION";
+        }
+
+        private static string GetNetworkLevel(string kind, NetCompositionInfo section)
+        {
+            if (kind == "ROAD")
+            {
+                return section.Runway || section.Taxiway
+                    ? "SPECIAL"
+                    : GetRoadLevel(section);
+            }
+            if (kind == "BEAUTIFICATION") return "BEAUTIFICATION";
+            return null;
         }
     }
 }

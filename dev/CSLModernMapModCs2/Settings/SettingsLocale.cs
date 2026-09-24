@@ -3,6 +3,7 @@ using Colossal;
 
 namespace CSLModernMap.Settings
 {
+    /// <summary>提供模组设置的本地化文案</summary>
     internal sealed class SettingsLocale : IDictionarySource
     {
         private readonly CSLModernMapSettings m_Settings;
@@ -40,19 +41,22 @@ namespace CSLModernMap.Settings
 
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.ExportStatus)), "导出状态" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.ExportStatus)),
-                    "本次会话的导出进度；导出目录里已有文件时，下方两行显示最近一次的结果。" },
+                    "这里直接显示导出结果和首条警告；其余问题可在导出文件的 issues 中查看。下方两行显示上次文件和统计。" },
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.LastExport)), "上次导出" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.LastExport)), "时间与文件名。" },
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.LastCounts)), "上次统计" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.LastCounts)),
                     "节点 / 路网 / 建筑 / 站点 / 线路的数量。" },
 
-                { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.RendererStatus)), "查看器" },
+                { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.RendererStatus)), "查看器安装状态" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.RendererStatus)),
-                    "随模组一起下发的查看器是否已就绪；装好后这里显示它的版本号。安装与打开全程不联网。" },
+                    "有旧版本时显示待更新至随包版本；点击安装或更新即可重装，无需联网。" },
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.InstallRenderer)), "安装 / 更新查看器" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.InstallRenderer)),
-                    "把模组自带的查看器解压到本机的 %LOCALAPPDATA%\\CSLModernMap\\Renderer。已经装过且版本一致时会直接跳过。" },
+                    "校验随包载荷后清空本机的 %LOCALAPPDATA%\\CSLModernMap\\Renderer 并重新安装。" },
+                { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.OpenRendererFolder)), "打开渲染器目录" },
+                { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.OpenRendererFolder)),
+                    "用系统文件管理器打开渲染器安装目录。" },
 
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.Version)), "版本" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.Version)),
@@ -60,19 +64,19 @@ namespace CSLModernMap.Settings
 
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.ExportAndOpen)), "导出并打开" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.ExportAndOpen)),
-                    "导出当前城市，然后用模组自带的查看器打开这份文件。导出失败不会启动查看器。" },
+                    "导出当前城市，然后用模组自带的查看器打开这份文件。" },
 
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.ExportCurrentCity)), "导出当前城市" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.ExportCurrentCity)),
-                    "只把当前城市写成一份 .cmm.gz，放到导出目录，不启动任何程序。" },
+                    "只把当前城市导出到目录。" },
 
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.OpenExportFolder)), "打开导出目录" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.OpenExportFolder)),
-                    "用系统文件管理器打开导出目录。若打不开，会自动复制目录路径。" },
+                    "用系统文件管理器打开导出目录。" },
 
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.CopyExportFolderPath)), "复制导出目录" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.CopyExportFolderPath)),
-                    "把导出目录的完整路径复制到剪贴板。" },
+                    "把导出目录的路径复制到剪贴板。" },
             };
         }
 
@@ -91,19 +95,22 @@ namespace CSLModernMap.Settings
 
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.ExportStatus)), "Export status" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.ExportStatus)),
-                    "Progress for this session; if the export folder already has files, the two rows below show the most recent one." },
+                    "Shows the export result and first warning directly. Other issues are in the export file's issues; the rows below show the latest file and counts." },
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.LastExport)), "Last export" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.LastExport)), "Time and file name." },
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.LastCounts)), "Last counts" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.LastCounts)),
                     "Node / network / building / stop / line counts." },
 
-                { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.RendererStatus)), "Renderer" },
+                { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.RendererStatus)), "Renderer installation" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.RendererStatus)),
-                    "Whether the renderer shipped with this mod is ready; once installed, its version is shown here. Nothing is downloaded." },
+                    "An older installation is shown as update available. Install / Update reinstalls from the bundled payload without downloading." },
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.InstallRenderer)), "Install / Update Renderer" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.InstallRenderer)),
-                    "Unpack the bundled renderer into %LOCALAPPDATA%\\CSLModernMap\\Renderer. Skipped when the same version is already installed." },
+                    "Verify the bundled payload, clear %LOCALAPPDATA%\\CSLModernMap\\Renderer, and reinstall the renderer." },
+                { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.OpenRendererFolder)), "Open Renderer Folder" },
+                { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.OpenRendererFolder)),
+                    "Open the renderer installation folder in the system file manager." },
 
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.Version)), "Version" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.Version)),

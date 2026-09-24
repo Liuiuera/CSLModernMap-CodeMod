@@ -16,6 +16,7 @@ using UnityEngine.Scripting;
 
 namespace CSLModernMap.Systems
 {
+    /// <summary>采集建筑及其用途数据</summary>
     public sealed partial class MapExportUISystem
     {
         private int AppendBuildings(StringBuilder json)
@@ -25,12 +26,17 @@ namespace CSLModernMap.Systems
             m_SubServiceCounts.Clear();
             m_ExcludedNonBuildingCount = 0;
             m_ExcludedNoGeometryCount = 0;
+            m_CustomBuildingNameCount = 0;
             m_ExtensionCount = 0;
             m_UpgradeCount = 0;
             m_AttachedLinkCount = 0;
             m_UpgradeLinkCount = 0;
+            m_ExportedBuildingIds.Clear();
+            m_ExportedBuildingChildren.Clear();
+            m_ExportedBuildingPositions.Clear();
 
-            var entities = m_BuildingQuery.ToEntityArray(Allocator.Temp);
+            var entities = CollectBuildingEntities();
+            var nameSystem = GetNameSystem("buildings");
             m_LotSizeCache = new NativeHashMap<Entity, LotSizeEntry>(256, Allocator.Temp);
             m_PrefabNameCache.Clear();
             try
@@ -56,13 +62,15 @@ namespace CSLModernMap.Systems
                     }
 
                     included.Add(entity.Index);
+                    m_ExportedBuildingIds.Add(entity.Index);
                     lotByEntity.Add(entity.Index, lot);
                 }
 
-                // 一代m_subBuilding/m_parentBuilding对应CS2两条通道：InstalledUpgrade（主楼 附属楼）
-                // 与Objects.Attached.m_Parent如资源区占位依附采掘枢纽，语义不同分开计数。
                 var childrenByParent = new Dictionary<int, List<int>>();
                 var parentByChild = new Dictionary<int, int>();
+                foreach (var pair in m_StructuralParents)
+                    if (included.Contains(pair.Key) && included.Contains(pair.Value))
+                        AddChildLink(childrenByParent, parentByChild, pair.Value, pair.Key);
                 for (var i = 0; i < entities.Length; i++)
                 {
                     var entity = entities[i];
@@ -71,6 +79,22 @@ namespace CSLModernMap.Systems
                         continue;
                     }
 
+                    if (EntityManager.HasComponent<Game.Objects.SubObject>(entity))
+                    {
+                        var objects = EntityManager.GetBuffer<Game.Objects.SubObject>(entity, true);
+                        for (var o = 0; o < objects.Length; o++)
+                        {
+                            var child = objects[o].m_SubObject;
+                            if (child != Entity.Null && included.Contains(child.Index))
+                                AddChildLink(childrenByParent, parentByChild, entity.Index, child.Index);
+                        }
+                    }
+                    if (EntityManager.HasComponent<Game.Common.Owner>(entity))
+                    {
+                        var parent = EntityManager.GetComponentData<Game.Common.Owner>(entity).m_Owner;
+                        if (parent != Entity.Null && included.Contains(parent.Index))
+                            AddChildLink(childrenByParent, parentByChild, parent.Index, entity.Index);
+                    }
                     if (EntityManager.HasComponent<Game.Buildings.Extension>(entity))
                     {
                         m_ExtensionCount++;
@@ -110,9 +134,15 @@ namespace CSLModernMap.Systems
                     }
                 }
 
+                var structures = CollectBuildingStructures(
+                    entities, included, childrenByParent, parentByChild);
                 foreach (var children in childrenByParent.Values)
                 {
                     children.Sort();
+                }
+                foreach (var pair in childrenByParent)
+                {
+                    m_ExportedBuildingChildren[pair.Key] = new List<int>(pair.Value);
                 }
 
                 var written = 0;
@@ -125,9 +155,14 @@ namespace CSLModernMap.Systems
                     }
 
                     var transform = EntityManager.GetComponentData<Game.Objects.Transform>(entity);
+                    m_ExportedBuildingPositions[entity.Index] = new float2(
+                        transform.m_Position.x, transform.m_Position.z);
                     var prefab = EntityManager.GetComponentData<Game.Prefabs.PrefabRef>(entity).m_Prefab;
                     var lotMeters = lotByEntity[entity.Index].Size;
                     var prefabName = GetPrefabName(prefab);
+                    bool hasCustomName;
+                    var displayName = GetRenderedDisplayName(
+                        nameSystem, entity, "buildings", out hasCustomName);
                     var serviceDataRaw = GetServiceDataRaw(prefab);
                     var classification = ClassifyBuilding(entity, prefab, prefabName, serviceDataRaw);
 
@@ -144,11 +179,19 @@ namespace CSLModernMap.Systems
                     json.Append("    {\"id\": ").Append(entity.Index);
                     json.Append(", \"name\": ");
                     CmmJson.AppendString(json, prefabName);
-                    json.Append(", \"display_name\": {\"text\": \"\", \"source\": \"empty\"}");
+                    json.Append(", \"display_name\": {\"text\": ");
+                    CmmJson.AppendString(json, displayName);
+                    json.Append(", \"source\": ");
+                    CmmJson.AppendString(json, string.IsNullOrEmpty(displayName)
+                        ? "empty"
+                        : (hasCustomName ? "custom" : "game"));
+                    json.Append('}');
                     json.Append(", \"role\": ");
                     CmmJson.AppendString(json, classification.Role);
                     json.Append(", \"footprint\": ");
                     AppendBuildingFootprint(json, transform, lotMeters);
+                    CmmJson.AppendProperty(json, "geometry_source",
+                        structures.ContainsKey(entity.Index) ? "cs2:structure-container" : "cs2:lot-fallback");
 
                     json.Append(", \"parent_id\": ");
                     CmmJson.AppendOptionalInt(json, hasParent, parentId);
@@ -177,13 +220,26 @@ namespace CSLModernMap.Systems
                     json.Append(", \"icls\": ");
                     CmmJson.AppendString(json, prefabName);
 
-                    // 可选ID一律「整数或null」。
                     json.Append(", \"sub_building_id\": ");
                     CmmJson.AppendOptionalInt(json, hasChildren, hasChildren ? childIds[0] : 0);
                     json.Append(", \"parent_building_id\": ");
                     CmmJson.AppendOptionalInt(json, hasParent, parentId);
                     json.Append('}');
                     written++;
+                    List<BuildingStructure> parts;
+                    if (structures.TryGetValue(entity.Index, out parts))
+                    {
+                        foreach (var part in parts)
+                        {
+                            json.AppendLine(",");
+                            AppendBuildingStructure(json, part, entity.Index, prefabName, classification);
+                            written++;
+                        }
+                    }
+                    if (hasCustomName)
+                    {
+                        m_CustomBuildingNameCount++;
+                    }
 
                     int roleCount;
                     m_RoleCounts.TryGetValue(classification.Role, out roleCount);
@@ -208,11 +264,9 @@ namespace CSLModernMap.Systems
             finally
             {
                 m_LotSizeCache.Dispose();
-                entities.Dispose();
             }
         }
 
-        /// <summary>返回prefab的可靠占地尺寸（米），并按prefab缓存。</summary>
         private bool TryGetLotSize(Entity prefab, out LotSizeEntry entry)
         {
             if (prefab == Entity.Null)
@@ -230,7 +284,6 @@ namespace CSLModernMap.Systems
 
             entry = default;
 
-            // 首选地块尺寸：分区建筑与服务建筑都有，单位是「格」。
             if (EntityManager.HasComponent<Game.Prefabs.BuildingData>(prefab))
             {
                 var lot = EntityManager.GetComponentData<Game.Prefabs.BuildingData>(prefab).m_LotSize;
@@ -244,8 +297,6 @@ namespace CSLModernMap.Systems
 
             if (EntityManager.HasComponent<Game.Prefabs.BuildingExtensionData>(prefab))
             {
-                // 附属建筑（Extension）没有BuildingData，地块尺寸在BuildingExtensionData上，
-                // 单位同样是「格」。
                 var lot = EntityManager.GetComponentData<Game.Prefabs.BuildingExtensionData>(prefab).m_LotSize;
                 if (lot.x > 0 && lot.y > 0)
                 {
@@ -257,7 +308,6 @@ namespace CSLModernMap.Systems
 
             if (EntityManager.HasComponent<Game.Prefabs.ObjectGeometryData>(prefab))
             {
-                // 网格包围盒，本身就是米，不落在格边界上。
                 var mesh = EntityManager.GetComponentData<Game.Prefabs.ObjectGeometryData>(prefab).m_Size;
                 if (mesh.x > 0.1f && mesh.z > 0.1f)
                 {
@@ -280,10 +330,6 @@ namespace CSLModernMap.Systems
             public float2 Size { get; }
         }
 
-        /// <summary>
-        /// 把建筑写成4角旋转矩形。渲染层的建筑图层只取footprint的前4个点闭环绘制，
-        /// 所以这里固定输出4点、按顺序绕一圈。
-        /// </summary>
         private static void AppendBuildingFootprint(
             StringBuilder json,
             Game.Objects.Transform transform,
@@ -317,10 +363,6 @@ namespace CSLModernMap.Systems
                 .Append(", \"z\": ").Append(FormatFloat(world.z)).Append('}');
         }
 
-        /// <summary>
-        /// 映射到渲染器的service/sub_service词汇。优先使用分区和组件事实，
-        /// 仅对缺少结构化分类的资产使用通用名称关键字。
-        /// </summary>
         private (string Role, string Service, string SubService) ClassifyBuilding(
             Entity entity, Entity prefab, string prefabName, string serviceDataRaw)
         {
@@ -415,13 +457,11 @@ namespace CSLModernMap.Systems
                 return ("COMMERCIAL", "Commercial", "");
             }
 
-            // StorageProperty also appears on some offices, so office wins.
             if (EntityManager.HasComponent<Game.Buildings.OfficeProperty>(entity))
             {
                 return ("OFFICE", "Office", "");
             }
 
-            // 采掘建筑映射到CMM的PlayerIndustry子服务（农/林/矿/油）。
             if (EntityManager.HasComponent<Game.Buildings.ExtractorProperty>(entity)
                 || IsIndustryAreaPlaceholder(prefabName))
             {
@@ -450,7 +490,6 @@ namespace CSLModernMap.Systems
             return ("OTHER", "None", "");
         }
 
-        /// <summary>运输类子服务：按prefab名的词首匹配。</summary>
         private static readonly (string Term, string Sub)[] TransportSubServiceTerms =
         {
             ("metro", "PublicTransportMetro"),
@@ -473,7 +512,6 @@ namespace CSLModernMap.Systems
             ("mail", "PublicTransportPost"),
         };
 
-        /// <summary>通用名称关键字，按优先级排列并按词边界匹配。</summary>
         private static readonly (string Role, string[] Terms)[] RoleTerms =
         {
             ("AIRPORT", new[] { "airport", "airplane", "blimp" }),
@@ -490,7 +528,6 @@ namespace CSLModernMap.Systems
             ("LEISURE", new[] { "leisure", "stadium" }),
         };
 
-        /// <summary>分区分类。</summary>
         private (string Role, string Service, string SubService) ClassifyByZone(Entity prefab)
         {
             var zone = ReadZone(prefab);
@@ -506,7 +543,6 @@ namespace CSLModernMap.Systems
                 case Game.Zones.AreaType.Commercial:
                     return ("COMMERCIAL", "Commercial", "");
                 case Game.Zones.AreaType.Industrial:
-                    // CS2这里和1太不一样,这一点暂时这样实现，后续跟进
                     return zone.Value.m_ZoneFlags.HasFlag(Game.Prefabs.ZoneFlags.Office)
                         ? ("OFFICE", "Office", "")
                         : ("INDUSTRIAL", "Industrial", "");
@@ -546,7 +582,6 @@ namespace CSLModernMap.Systems
             return "";
         }
 
-        /// <summary>采掘分类：按名字分到CMM PlayerIndustry的农/林/矿/油子服务。</summary>
         private static (string Service, string Sub) ExtractClassification(string prefabName)
         {
             foreach (var token in Tokens(prefabName))
@@ -586,10 +621,6 @@ namespace CSLModernMap.Systems
             return ("PlayerIndustry", "");
         }
 
-        /// <summary>
-        /// 第一产业地块占位（Agriculture/Ore Area Placeholder一族）：没有Property组件，
-        /// 是农/林/矿/油的田面本身；普通分区占位名里没有area词，不会误判。
-        /// </summary>
         private static bool IsIndustryAreaPlaceholder(string prefabName)
         {
             return HasToken(prefabName, "placeholder") && HasToken(prefabName, "area");
@@ -667,9 +698,6 @@ namespace CSLModernMap.Systems
             }
         }
 
-        /// <summary>
-        /// 把名字切成小写词，供词首匹配，
-        /// </summary>
         private static List<string> Tokens(string name)
         {
             var tokens = new List<string>();
@@ -727,7 +755,6 @@ namespace CSLModernMap.Systems
             return false;
         }
 
-        /// <summary>prefab的ServiceData.m_Service原始值，只用于名称关键字匹配，不直接当service用。</summary>
         private string GetServiceDataRaw(Entity prefab)
         {
             if (prefab == Entity.Null
@@ -739,7 +766,6 @@ namespace CSLModernMap.Systems
             return EntityManager.GetComponentData<Game.Prefabs.ServiceData>(prefab).m_Service.ToString();
         }
 
-        /// <summary>登记父子关系</summary>
         private static bool AddChildLink(
             Dictionary<int, List<int>> childrenByParent,
             Dictionary<int, int> parentByChild,

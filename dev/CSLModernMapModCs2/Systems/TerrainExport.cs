@@ -10,23 +10,18 @@ using Unity.Mathematics;
 
 namespace CSLModernMap.Systems
 {
-    /// <summary>
-    /// 将游戏地形和水深重采样到CMM的公共网格；水深不可用时保留地形并输出提示
-    /// </summary>
+    /// <summary>采集地形和水域数据</summary>
     internal static class TerrainExport
     {
         internal sealed class Result
         {
-            internal string Json = "{}";
-            /// <summary>完整的JSON数组（含方括号），写进顶层 <c>issues</c>。</summary>
+            internal string Json;
             internal string Issues = "[]";
 
-            /// <summary>issue总数（error + warn）；文件写出来了但这份数据不完整时 &gt; 0。</summary>
             internal int IssueCount;
 
-            internal int IssueErrorCount;
+            internal string FirstIssue;
 
-            internal string FirstIssue = "";
             internal float SeaLevel;
             internal int Rows;
             internal int Cols;
@@ -39,49 +34,32 @@ namespace CSLModernMap.Systems
             var terrain = world.GetExistingSystemManaged<TerrainSystem>();
             if (terrain == null)
             {
-                return Failure(issues, "terrain-system-missing", "TerrainSystem不存在");
+                throw new InvalidDataException("TerrainSystem不存在");
             }
 
-            var data = terrain.GetHeightData(false);
-            if (!data.isCreated)
-            {
-                data = terrain.GetHeightData(true);
-            }
+            var data = terrain.GetHeightData(true);
+            var includeOutside = data.hasBackdrop && data.downscaledHeights.IsCreated
+                && data.downscaledHeights.Length > 0;
 
             if (!data.isCreated || !data.heights.IsCreated || data.heights.Length == 0)
             {
-                return Failure(issues, "height-data-unavailable", "TerrainHeightData不可用");
+                throw new InvalidDataException("TerrainHeightData不可用");
             }
 
-            // 地形源网格：宽resolution.x，高resolution.z。
             var srcCols = data.resolution.x;
             var srcRows = data.resolution.z;
             if ((long)srcCols * srcRows != data.heights.Length)
             {
-                if ((long)data.resolution.y * srcRows == data.heights.Length)
-                {
-                    srcCols = data.resolution.y;
-                }
-                else if ((long)srcCols * data.resolution.y == data.heights.Length)
-                {
-                    srcRows = data.resolution.y;
-                }
-                else
-                {
-                    srcCols = data.heights.Length;
-                    srcRows = 1;
-                }
+                throw new InvalidDataException("TerrainHeightData的分辨率与高度数据长度不一致");
             }
 
             var srcCellX = data.scale.x != 0f ? 1f / data.scale.x : 0f;
             var srcCellZ = data.scale.z != 0f ? 1f / data.scale.z : 0f;
             if (srcCellX <= 0f || srcCellZ <= 0f || srcCols <= 0 || srcRows <= 0)
             {
-                return Failure(issues, "invalid-terrain-grid",
-                    "TerrainHeightData的resolution/scale非法，无法推源网格世界范围");
+                throw new InvalidDataException("TerrainHeightData的resolution/scale非法，无法推源网格世界范围");
             }
 
-            // 目标公共网格：范围 = 地形源网格的世界范围（world = index/scale - offset）
             var spanX = srcCols * srcCellX;
             var spanZ = srcRows * srcCellZ;
             var originX = -data.offset.x;
@@ -89,12 +67,28 @@ namespace CSLModernMap.Systems
 
             var cols = 1024;
             var rows = 1024;
+            if (includeOutside)
+            {
+                var worldSize = terrain.worldSize;
+                var worldOrigin = terrain.worldOffset;
+                if (worldSize.x <= 0 || worldSize.y <= 0
+                    || !math.all(math.isfinite(worldSize)) || !math.all(math.isfinite(worldOrigin)))
+                    throw new InvalidDataException("Invalid surrounding terrain bounds.");
+                cols = (int)Math.Round(1024d * worldSize.x / spanX);
+                rows = (int)Math.Round(1024d * worldSize.y / spanZ);
+                if (cols < 1 || rows < 1 || cols > 8192 || rows > 8192)
+                    throw new InvalidDataException("Surrounding terrain grid is too large.");
+                spanX = worldSize.x;
+                spanZ = worldSize.y;
+                originX = worldOrigin.x;
+                originZ = worldOrigin.y;
+            }
             var cellX = spanX / cols;
             var cellZ = spanZ / rows;
             var cell = Math.Min(cellX, cellZ);
             if (!(cell > 0f))
             {
-                return Failure(issues, "invalid-target-cell", "目标格宽非正");
+                throw new InvalidDataException("目标格宽非正");
             }
 
             if (Math.Abs(cellX - cellZ) > 0.01f * cell)
@@ -104,7 +98,6 @@ namespace CSLModernMap.Systems
                     + " m），公共格宽取小者，另一方向覆盖会略短");
             }
 
-            // 高度：目标格中心按世界坐标采样（行 += 北，列 += 东）
             var heightValues = new float[rows * cols];
             try
             {
@@ -121,37 +114,51 @@ namespace CSLModernMap.Systems
             }
             catch (Exception e)
             {
-                Mod.log.Warn("[terrain] 高度采样失败: " + e.GetType().Name + ": " + e.Message);
-                issues.Error("HEIGHT_SAMPLE_FAILED",
-                    "TerrainUtils.SampleHeight抛异常（" + e.GetType().Name + "），height为已采样部分/零值");
+                throw new InvalidDataException("TerrainUtils.SampleHeight采样失败", e);
             }
 
-            // 水深：CPU侧GetSurfaceData，按水网格自己的origin/cell求交取覆盖最大值
             var waterValues = new float[rows * cols];
             var water = world.GetExistingSystemManaged<WaterSystem>();
-            var seaLevel = 0f;
-
-            if (water != null)
+            if (water == null)
             {
-                seaLevel = water.SeaLevel;
+                throw new InvalidDataException("WaterSystem不存在");
+            }
 
-                var surface = water.GetSurfaceData(out var deps);
-                deps.Complete();
+            var seaLevel = water.SeaLevel;
+            var surface = water.GetSurfaceData(out var deps);
+            deps.Complete();
 
-                if (surface.depths.IsCreated)
+            if (!surface.depths.IsCreated)
+            {
+                throw new InvalidDataException("WaterSurfaceData不可用");
+            }
+
+            var wCols = surface.resolution.x;
+            var wRows = surface.resolution.z;
+            var wCellX = surface.scale.x != 0f ? 1f / surface.scale.x : 0f;
+            var wCellZ = surface.scale.z != 0f ? 1f / surface.scale.z : 0f;
+            if (wCols <= 0 || wRows <= 0 || wCellX <= 0f || wCellZ <= 0f
+                || (long)wCols * wRows != surface.depths.Length)
+            {
+                throw new InvalidDataException("Water surface grid is invalid.");
+            }
+
+            ResampleWaterDepth(
+                ref surface, rows, cols, originX, originZ, cell, waterValues);
+
+            if (includeOutside)
+            {
+                var cityMin = terrain.playableOffset;
+                var cityMax = cityMin + terrain.playableArea;
+                for (var r = 0; r < rows; r++)
                 {
-                    var wCols = surface.resolution.x;
-                    var wRows = surface.resolution.z;
-                    var wCellX = surface.scale.x != 0f ? 1f / surface.scale.x : 0f;
-                    var wCellZ = surface.scale.z != 0f ? 1f / surface.scale.z : 0f;
-                    if (wCols <= 0 || wRows <= 0 || wCellX <= 0f || wCellZ <= 0f
-                        || (long)wCols * wRows != surface.depths.Length)
+                    var z = originZ + (r + .5f) * cell;
+                    for (var c = 0; c < cols; c++)
                     {
-                        throw new InvalidDataException("Water surface grid is invalid.");
+                        var x = originX + (c + .5f) * cell;
+                        if (x < cityMin.x || x >= cityMax.x || z < cityMin.y || z >= cityMax.y)
+                            waterValues[r * cols + c] = Math.Max(0f, seaLevel - heightValues[r * cols + c]);
                     }
-
-                    ResampleWaterDepth(
-                        ref surface, rows, cols, originX, originZ, cell, waterValues);
                 }
             }
 
@@ -173,24 +180,10 @@ namespace CSLModernMap.Systems
                 Json = json.ToString(),
                 Issues = issues.ToJson(),
                 IssueCount = issues.Count,
-                IssueErrorCount = issues.ErrorCount,
                 FirstIssue = issues.First,
                 SeaLevel = seaLevel,
                 Rows = rows,
                 Cols = cols,
-            };
-        }
-
-        private static Result Failure(CmmIssueCollector issues, string reason, string message)
-        {
-            issues.Error("TERRAIN_UNAVAILABLE", message + "（" + reason + "）");
-            return new Result
-            {
-                Json = "{}",
-                Issues = issues.ToJson(),
-                IssueCount = issues.Count,
-                IssueErrorCount = issues.ErrorCount,
-                FirstIssue = issues.First,
             };
         }
 
@@ -199,11 +192,7 @@ namespace CSLModernMap.Systems
             return Math.Max(1, Math.Max(srcW / cols, srcH / rows));
         }
 
-        /// <summary>
-        /// 把水网格的 <c>m_Depth</c> 投影到CMM公共网格：每个目标格取覆盖的源像元最大值
-        /// （平均会把窄河道压到水域阈值以下，轮廓就断了）。下标 = z行 × resolution.x + x列，
-        /// 世界坐标 = index/scale - offset（行0 = 最小Z）。
-        /// </summary>
+        /// <summary>取目标网格覆盖范围内的最大水深以保留窄水域</summary>
         private static void ResampleWaterDepth(
             ref WaterSurfaceData<SurfaceWater> surface, int rows, int cols,
             float originX, float originZ, float cell, float[] output)
@@ -287,7 +276,7 @@ namespace CSLModernMap.Systems
             json.Append("\"}");
         }
 
-        /// <summary>float32小端row-major → zlib → base64，与CMM<c>Grid</c>的编码一致。</summary>
+        /// <summary>将浮点网格封装为带校验值的压缩数据</summary>
         private static string Encode(float[] values)
         {
             var raw = new byte[values.Length * 4];
@@ -295,8 +284,6 @@ namespace CSLModernMap.Systems
 
             using (var output = new MemoryStream(raw.Length / 3))
             {
-                // zlib = 2字节头 + raw deflate + adler32。.NET Framework只有raw deflate，
-                // 头尾自己补（CMM侧用zlib.decompress解，两者必须严丝合缝）。
                 output.WriteByte(0x78);
                 output.WriteByte(0x9C);
                 using (var deflate = new DeflateStream(output, CompressionMode.Compress, true))
@@ -320,7 +307,6 @@ namespace CSLModernMap.Systems
             var index = 0;
             while (index < data.Length)
             {
-                // 5552是zlib文档给的「不取模也不会溢出」的分块长度。
                 var block = Math.Min(5552, data.Length - index);
                 for (var i = 0; i < block; i++)
                 {

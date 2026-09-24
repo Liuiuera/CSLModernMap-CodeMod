@@ -7,6 +7,7 @@ using Newtonsoft.Json.Linq;
 
 namespace CSLModernMap.Systems
 {
+    /// <summary>生成地图数据的序列化内容</summary>
     internal static class CmmJson
     {
         private static string Escape(string value)
@@ -15,7 +16,6 @@ namespace CSLModernMap.Systems
             {
                 return string.Empty;
             }
-
             var firstEscape = -1;
             for (var i = 0; i < value.Length; i++)
             {
@@ -34,7 +34,6 @@ namespace CSLModernMap.Systems
 
             var result = new StringBuilder(value.Length + 8);
             result.Append(value, 0, firstEscape);
-
             for (var i = firstEscape; i < value.Length; i++)
             {
                 var c = value[i];
@@ -73,7 +72,6 @@ namespace CSLModernMap.Systems
                         {
                             result.Append(c);
                         }
-
                         break;
                 }
             }
@@ -85,7 +83,6 @@ namespace CSLModernMap.Systems
         {
             json.Append('"').Append(Escape(value)).Append('"');
         }
-
         internal static void AppendProperty(
             StringBuilder json,
             string name,
@@ -96,7 +93,6 @@ namespace CSLModernMap.Systems
             json.Append(": ");
             AppendString(json, value);
         }
-
         internal static void AppendOptionalInt(
             StringBuilder json,
             bool hasValue,
@@ -115,7 +111,6 @@ namespace CSLModernMap.Systems
             {
                 return "{}";
             }
-
             var sorted = new SortedDictionary<string, int>(
                 counts,
                 StringComparer.Ordinal);
@@ -132,7 +127,6 @@ namespace CSLModernMap.Systems
                 error = "文档为空";
                 return false;
             }
-
             try
             {
                 JToken.Parse(text);

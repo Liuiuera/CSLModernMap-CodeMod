@@ -4,9 +4,9 @@ using System.Text;
 
 namespace CSLModernMap.Systems
 {
+    /// <summary>写入地图数据文件</summary>
     internal static class CmmWriter
     {
-        /// <summary>以UTF-8无BOM写入gzip；成功关闭后才替换为正式文件。</summary>
         internal static void WriteCompressed(string path, string text)
         {
             var directory = Path.GetDirectoryName(path);

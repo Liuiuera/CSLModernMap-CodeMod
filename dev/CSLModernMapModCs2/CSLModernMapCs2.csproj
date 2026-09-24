@@ -106,11 +106,16 @@
            Text="查看器载荷校验文件缺失：CSLModernMapRenderer.cslmr.sha256。" />
     <Error Condition="!Exists('$(MSBuildProjectDirectory)\renderer-version.txt')"
            Text="查看器版本文件缺失：renderer-version.txt。" />
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\LICENSES\Carto-LICENSE.txt')"
+           Text="Carto 许可文件缺失：LICENSES\Carto-LICENSE.txt。" />
   </Target>
 
   <Target Name="DeployCSLModernMapPayload" AfterTargets="DeployWIP">
     <Copy SourceFiles="@(CSLModernMapPayload)"
           DestinationFiles="@(CSLModernMapPayload->'$(DeployDir)\%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\LICENSES\Carto-LICENSE.txt"
+          DestinationFiles="$(DeployDir)\LICENSES\Carto-LICENSE.txt"
           SkipUnchangedFiles="true" />
   </Target>
 

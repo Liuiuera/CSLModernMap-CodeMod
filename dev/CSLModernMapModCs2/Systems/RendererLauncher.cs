@@ -8,7 +8,7 @@ using System.Text;
 
 namespace CSLModernMap.Systems
 {
-    /// <summary>安装并启动随 Mod 分发的查看器。</summary>
+    /// <summary>安装并启动地图查看器</summary>
     internal static class RendererLauncher
     {
         internal const string PayloadFileName = "CSLModernMapRenderer.cslmr";
@@ -45,6 +45,9 @@ namespace CSLModernMap.Systems
                 var version = File.ReadAllText(PayloadVersionPath, Encoding.UTF8).Trim();
                 return version.Length > 0
                     && version.Length <= 32
+                    && version != "."
+                    && version != ".."
+                    && version.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
                     && string.Equals(Path.GetFileName(version), version, StringComparison.Ordinal)
                         ? version
                         : "";
@@ -68,7 +71,34 @@ namespace CSLModernMap.Systems
 
         internal static bool IsInstalled => File.Exists(InstalledExecutable);
 
-        internal static string EnsureInstalled()
+        internal static bool HasOlderInstallation
+        {
+            get
+            {
+                try
+                {
+                    foreach (var directory in Directory.EnumerateDirectories(ExportPaths.RendererDirectory))
+                    {
+                        if (!string.Equals(directory, InstalledDirectory, StringComparison.OrdinalIgnoreCase)
+                            && File.Exists(Path.Combine(directory, RendererExeName)))
+                        {
+                            return true;
+                        }
+                    }
+                }
+                catch (IOException)
+                {
+                }
+                catch (UnauthorizedAccessException)
+                {
+                }
+
+                return false;
+            }
+        }
+
+        /// <summary>安装时校验查看器载荷</summary>
+        internal static string EnsureInstalled(bool reinstall = false)
         {
             if (!IsSupported)
             {
@@ -80,7 +110,7 @@ namespace CSLModernMap.Systems
                 throw new FileNotFoundException("Renderer payload, hash or version file is missing.");
             }
 
-            if (IsInstalled)
+            if (!reinstall && IsInstalled)
             {
                 return InstalledExecutable;
             }
@@ -92,10 +122,25 @@ namespace CSLModernMap.Systems
                 throw new InvalidDataException("Renderer payload SHA-256 does not match.");
             }
 
-            Directory.CreateDirectory(ExportPaths.RendererDirectory);
-            if (Directory.Exists(InstalledDirectory))
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var rendererRoot = Path.GetFullPath(ExportPaths.RendererDirectory);
+            if (string.IsNullOrEmpty(localAppData)
+                || !Path.IsPathRooted(localAppData)
+                || !string.Equals(rendererRoot,
+                    Path.GetFullPath(Path.Combine(localAppData, "CSLModernMap", "Renderer")),
+                    StringComparison.OrdinalIgnoreCase))
             {
-                Directory.Delete(InstalledDirectory, true);
+                throw new InvalidOperationException("Renderer install directory is invalid.");
+            }
+
+            if (Directory.Exists(rendererRoot))
+            {
+                if ((File.GetAttributes(rendererRoot) & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new InvalidOperationException("Renderer install directory is a link.");
+                }
+
+                Directory.Delete(rendererRoot, true);
             }
 
             Directory.CreateDirectory(InstalledDirectory);
@@ -106,7 +151,6 @@ namespace CSLModernMap.Systems
                 throw new InvalidDataException("Renderer entry executable is missing after extraction.");
             }
 
-            Mod.log.Info("[renderer] 查看器已就绪: " + InstalledDirectory);
             return InstalledExecutable;
         }
 
@@ -117,17 +161,11 @@ namespace CSLModernMap.Systems
                 throw new FileNotFoundException("Renderer is not installed.", InstalledExecutable);
             }
 
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = InstalledExecutable,
-                Arguments = "\"" + exportPath + "\"",
-                WorkingDirectory = ExportPaths.ExportDirectory,
-                UseShellExecute = false,
-            });
-            Mod.log.Info("[renderer] 已启动查看器: " + InstalledExecutable + " \"" + exportPath + "\"");
+            var processId = RendererDetachedProcess.Start(
+                InstalledExecutable, "\"" + exportPath + "\"", ExportPaths.ExportDirectory);
+            Mod.log.Info("[renderer] 查看器已独立启动，PID=" + processId);
         }
 
-        /// <summary>用系统文件管理器打开目录；目录不存在或系统调用被拒返回 false。</summary>
         internal static bool TryOpenInFileManager(string directory)
         {
             if (string.IsNullOrEmpty(directory))
@@ -140,7 +178,11 @@ namespace CSLModernMap.Systems
                 Directory.CreateDirectory(directory);
                 if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
-                    Process.Start("explorer", directory);
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = directory,
+                        UseShellExecute = true,
+                    })?.Dispose();
                 }
                 else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                 {
@@ -157,6 +199,23 @@ namespace CSLModernMap.Systems
             {
                 Mod.log.Warn("[export] 无法打开导出目录: " + e.Message);
                 return false;
+            }
+        }
+
+        internal static void OpenRendererDirectory()
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = ExportPaths.RendererDirectory,
+                    UseShellExecute = true,
+                    ErrorDialog = true,
+                })?.Dispose();
+            }
+            catch (Exception e)
+            {
+                Mod.log.Warn("[renderer] 无法打开渲染器目录: " + e.Message);
             }
         }
 
