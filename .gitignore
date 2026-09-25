@@ -7,11 +7,6 @@ dev/CSLModernMapModCs2/Library/
 dev/CSLModernMapModCs2/UI/node_modules/
 dev/CSLModernMapModCs2/UI/build/
 
-# Release payloads are built separately and are not source files.
-dev/CSLModernMapModCs2/CSLModernMapRenderer.cslmr
-dev/CSLModernMapModCs2/CSLModernMapRenderer.cslmr.sha256
-dev/CSLModernMapModCs2/renderer-version.txt
-
 __pycache__/
 *.pyc
 *.log

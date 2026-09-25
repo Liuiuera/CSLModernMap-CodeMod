@@ -4,6 +4,8 @@
 
 The Cities: Skylines II code mod for CSLModernMap. It exports the current city as a compressed `.cmm.gz` map file.
 
+This repository includes the Code Mod source and the prebuilt renderer payload used in official releases. The renderer source is not included; the renderer only reads exported `.cmm.gz` files and does not directly access game save files.
+
 ## Features
 
 - Exports roads, tracks, buildings, public transport, terrain, and water.
