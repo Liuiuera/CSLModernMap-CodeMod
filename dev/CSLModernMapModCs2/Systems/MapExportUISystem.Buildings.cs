@@ -35,8 +35,8 @@ namespace CSLModernMap.Systems
             m_ExportedBuildingChildren.Clear();
             m_ExportedBuildingPositions.Clear();
 
+            var nameSystem = World.GetOrCreateSystemManaged<Game.UI.NameSystem>();
             var entities = CollectBuildingEntities();
-            var nameSystem = GetNameSystem("buildings");
             m_LotSizeCache = new NativeHashMap<Entity, LotSizeEntry>(256, Allocator.Temp);
             m_PrefabNameCache.Clear();
             try
@@ -165,6 +165,7 @@ namespace CSLModernMap.Systems
                         nameSystem, entity, "buildings", out hasCustomName);
                     var serviceDataRaw = GetServiceDataRaw(prefab);
                     var classification = ClassifyBuilding(entity, prefab, prefabName, serviceDataRaw);
+                    var category = ReadBuildingCategory(prefab, entity.Index);
 
                     int parentId;
                     var hasParent = parentByChild.TryGetValue(entity.Index, out parentId);
@@ -186,6 +187,10 @@ namespace CSLModernMap.Systems
                         ? "empty"
                         : (hasCustomName ? "custom" : "game"));
                     json.Append('}');
+                    AppendBuildingCategory(json, category);
+                    var zoned = ClassifyByZone(prefab);
+                    CmmJson.AppendProperty(json, "growth_kind", zoned.Role != null ? "zoned" : "placed");
+                    CmmJson.AppendProperty(json, "growth_use", zoned.Role != null ? zoned.Role.ToLowerInvariant() : "");
                     json.Append(", \"role\": ");
                     CmmJson.AppendString(json, classification.Role);
                     json.Append(", \"footprint\": ");
@@ -232,7 +237,7 @@ namespace CSLModernMap.Systems
                         foreach (var part in parts)
                         {
                             json.AppendLine(",");
-                            AppendBuildingStructure(json, part, entity.Index, prefabName, classification);
+                            AppendBuildingStructure(json, part, entity.Index, prefabName, classification, category);
                             written++;
                         }
                     }
@@ -359,8 +364,8 @@ namespace CSLModernMap.Systems
             }
 
             var world = transform.m_Position + math.rotate(transform.m_Rotation, new float3(offsetX, 0f, offsetZ));
-            json.Append("{\"x\": ").Append(FormatFloat(world.x))
-                .Append(", \"z\": ").Append(FormatFloat(world.z)).Append('}');
+            json.Append("{\"x\": ").Append(CmmJson.FormatFloat(world.x))
+                .Append(", \"z\": ").Append(CmmJson.FormatFloat(world.z)).Append('}');
         }
 
         private (string Role, string Service, string SubService) ClassifyBuilding(
@@ -549,6 +554,41 @@ namespace CSLModernMap.Systems
                 default:
                     return (null, "", "");
             }
+        }
+
+        private (string Id, string Name, string Locale) ReadBuildingCategory(Entity prefab, int buildingId)
+        {
+            var categoryPrefab = EntityManager.HasComponent<Game.Prefabs.SpawnableBuildingData>(prefab)
+                ? EntityManager.GetComponentData<Game.Prefabs.SpawnableBuildingData>(prefab).m_ZonePrefab
+                : prefab;
+            var prefabName = GetPrefabName(categoryPrefab);
+            if (string.IsNullOrEmpty(prefabName))
+            {
+                Mod.log.Warn("[buildings] 建筑 " + buildingId + " 分类 prefab 标识为空，跳过分类名称");
+                return ("", "", "");
+            }
+            var manager = Game.SceneFlow.GameManager.instance.localizationManager;
+            var id = "Assets.NAME[" + prefabName + "]";
+            string name;
+            if (!manager.activeDictionary.TryGetValue(id, out name) || string.IsNullOrEmpty(name))
+            {
+                Mod.log.Warn("[buildings] 建筑 " + buildingId + " 缺少官方分类名称：" + id + "，跳过分类名称");
+                return (id, "", manager.activeLocaleId ?? "");
+            }
+            if (string.IsNullOrEmpty(manager.activeLocaleId))
+            {
+                Mod.log.Warn("[buildings] 建筑 " + buildingId + " 分类名称语言标识为空，跳过分类名称");
+                return (id, name, "");
+            }
+            return (id, name, manager.activeLocaleId);
+        }
+
+        private static void AppendBuildingCategory(StringBuilder json,
+            (string Id, string Name, string Locale) category)
+        {
+            CmmJson.AppendProperty(json, "category_id", category.Id);
+            CmmJson.AppendProperty(json, "category_name", category.Name);
+            CmmJson.AppendProperty(json, "category_locale", category.Locale);
         }
 
         private Game.Prefabs.ZoneData? ReadZone(Entity prefab)

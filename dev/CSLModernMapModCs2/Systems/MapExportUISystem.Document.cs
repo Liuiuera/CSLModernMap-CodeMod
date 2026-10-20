@@ -11,7 +11,7 @@ namespace CSLModernMap.Systems
     /// <summary>组装地图导出文档</summary>
     public sealed partial class MapExportUISystem
     {
-        private ExportResult WriteCmmExport()
+        private ExportResult CaptureCmmExport(out string text)
         {
             var outputDirectory = ExportPaths.EnsureExportDirectory();
 
@@ -148,6 +148,7 @@ namespace CSLModernMap.Systems
             json.Append("  \"extensions\": {\"map_tile_grid\": ").Append(mapTileGrid);
             json.Append(", \"cs2\": {\"game_version\": ");
             CmmJson.AppendString(json, Application.version);
+            json.Append(", \"transit_contract_version\": 2");
             json.Append(", \"world\": ");
             CmmJson.AppendString(json, World.Name);
             json.Append(", \"traffic_snapshot\": ").Append(traffic.MetadataJson());
@@ -165,19 +166,7 @@ namespace CSLModernMap.Systems
             json.AppendLine("}}");
             json.AppendLine("}");
 
-            var text = json.ToString();
-
-            string syntaxError;
-            if (!CmmJson.IsWellFormed(text, out syntaxError))
-            {
-                var invalidPath = ExportPaths.BuildInvalidName(path);
-                CmmWriter.WritePlain(invalidPath, text);
-                Mod.log.Error("[export] 导出结果不是合法JSON：" + syntaxError);
-                Mod.log.Error("[export] 坏文件保留在: " + invalidPath);
-                throw new InvalidOperationException("导出结果不是合法JSON " + syntaxError);
-            }
-
-            CmmWriter.WriteCompressed(path, text);
+            text = json.ToString();
             var firstIssue = terrain.IssueCount > 0 ? terrain.FirstIssue
                 : transit.IssueCount > 0 ? transit.FirstIssue
                 : areas.IssueCount > 0 ? "部分区域缺少完整几何数据"

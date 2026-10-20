@@ -12,13 +12,14 @@ namespace CSLModernMap
         public static readonly ILog log =
             LogManager.GetLogger("CSLModernMap").SetShowsErrorsInUI(false);
 
-        public const string ModVersion = "6.7.1";
+        public const string ModVersion = "6.7.2f2";
 
         private static readonly string[] SupportedLocaleIds =
         {
             "zh-HANS",
             "zh-HANT",
             "en-US",
+            "it-IT",
             "de-DE",
             "es-ES",
             "fr-FR",
@@ -45,7 +46,7 @@ namespace CSLModernMap
             foreach (string localeId in SupportedLocaleIds)
             {
                 GameManager.instance.localizationManager.AddSource(
-                    localeId, new SettingsLocale(m_Settings, localeId.StartsWith("zh")));
+                    localeId, new SettingsLocale(m_Settings, localeId));
             }
             m_Settings.RegisterInOptionsUI();
         }

@@ -134,7 +134,7 @@ namespace CSLModernMap.Systems
                 AppendPoints(json, item.Points);
                 json.Append("]}, \"mode\": ");
                 CmmJson.AppendString(json, item.Mode);
-                json.Append(", \"width\": ").Append(FormatFloat(item.Width))
+                json.Append(", \"width\": ").Append(CmmJson.FormatFloat(item.Width))
                     .Append(", \"lane_summary\": null, \"transit_for\": ");
                 if (item.TransitKind == null)
                 {
@@ -301,20 +301,10 @@ namespace CSLModernMap.Systems
 
         private static void AppendVec3(StringBuilder json, float3 value)
         {
-            json.Append("{\"x\": ").Append(FormatFloat(value.x))
-                .Append(", \"y\": ").Append(FormatFloat(value.y))
-                .Append(", \"z\": ").Append(FormatFloat(value.z))
+            json.Append("{\"x\": ").Append(CmmJson.FormatFloat(value.x))
+                .Append(", \"y\": ").Append(CmmJson.FormatFloat(value.y))
+                .Append(", \"z\": ").Append(CmmJson.FormatFloat(value.z))
                 .Append('}');
-        }
-
-        private static string FormatFloat(float value)
-        {
-            if (float.IsNaN(value) || float.IsInfinity(value))
-            {
-                return "0";
-            }
-
-            return value.ToString("0.###", CultureInfo.InvariantCulture);
         }
 
         internal readonly struct ModeRecord

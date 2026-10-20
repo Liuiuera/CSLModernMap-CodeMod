@@ -55,7 +55,7 @@ namespace CSLModernMap.Systems
             var entries = new List<AreaEntry>();
             var seenAreas = new HashSet<int>();
             var owners = new HashSet<int>();
-            var nameSystem = GetNameSystem("areas");
+            var nameSystem = World.GetOrCreateSystemManaged<Game.UI.NameSystem>();
 
             var parentByChild = new Dictionary<int, int>();
             foreach (var pair in m_ExportedBuildingChildren)
@@ -258,15 +258,15 @@ namespace CSLModernMap.Systems
                 result.FacilityGroupsJson.Append(", \"source\": ");
                 CmmJson.AppendString(result.FacilityGroupsJson, named.NameSource);
                 result.FacilityGroupsJson.Append("}, \"anchor\": [")
-                    .Append(FormatFloat(primary.Position.x)).Append(", 0, ")
-                    .Append(FormatFloat(primary.Position.y)).Append(']');
+                    .Append(CmmJson.FormatFloat(primary.Position.x)).Append(", 0, ")
+                    .Append(CmmJson.FormatFloat(primary.Position.y)).Append(']');
                 result.FacilityGroupsJson.Append(", \"boundary\": {\"points\": [");
                 for (var pointIndex = 0; pointIndex < boundary.Points.Count; pointIndex++)
                 {
                     if (pointIndex > 0) result.FacilityGroupsJson.Append(", ");
                     result.FacilityGroupsJson.Append('[')
-                        .Append(FormatFloat(boundary.Points[pointIndex].x)).Append(", ")
-                        .Append(FormatFloat(boundary.Points[pointIndex].y)).Append(']');
+                        .Append(CmmJson.FormatFloat(boundary.Points[pointIndex].x)).Append(", ")
+                        .Append(CmmJson.FormatFloat(boundary.Points[pointIndex].y)).Append(']');
                 }
                 result.FacilityGroupsJson.Append("]}, \"source_zone_id\": ")
                     .Append(primary.Id.ToString(CultureInfo.InvariantCulture));
@@ -522,6 +522,7 @@ namespace CSLModernMap.Systems
                 source = "empty";
                 Mod.log.Warn("[areas] 行政区名称解析失败: "
                     + e.GetType().Name + ": " + e.Message);
+                throw;
             }
         }
 
@@ -605,6 +606,7 @@ namespace CSLModernMap.Systems
                 catch (Exception e)
                 {
                     Mod.log.Warn("[areas] 设施名解析失败: " + e.GetType().Name + ": " + e.Message);
+                    throw;
                 }
             }
 
@@ -629,12 +631,12 @@ namespace CSLModernMap.Systems
             for (var i = 0; i < entry.Points.Count; i++)
             {
                 if (i > 0) json.Append(", ");
-                json.Append('[').Append(FormatFloat(entry.Points[i].x)).Append(", ")
-                    .Append(FormatFloat(entry.Points[i].y)).Append(']');
+                json.Append('[').Append(CmmJson.FormatFloat(entry.Points[i].x)).Append(", ")
+                    .Append(CmmJson.FormatFloat(entry.Points[i].y)).Append(']');
             }
             json.Append("]}, \"position\": [")
-                .Append(FormatFloat(entry.Position.x)).Append(", ")
-                .Append(FormatFloat(entry.Position.y)).Append(']');
+                .Append(CmmJson.FormatFloat(entry.Position.x)).Append(", ")
+                .Append(CmmJson.FormatFloat(entry.Position.y)).Append(']');
             json.Append(", \"owner_building_id\": ")
                 .Append(entry.OwnerBuildingId.HasValue
                     ? entry.OwnerBuildingId.Value.ToString(CultureInfo.InvariantCulture)

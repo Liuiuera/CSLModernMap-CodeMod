@@ -117,10 +117,12 @@ namespace CSLModernMap.Systems
         }
 
         private static void AppendBuildingStructure(StringBuilder json, BuildingStructure part,
-            int parentId, string prefabName, (string Role, string Service, string SubService) classification)
+            int parentId, string prefabName, (string Role, string Service, string SubService) classification,
+            (string Id, string Name, string Locale) category)
         {
             json.Append("    {\"id\": ").Append(part.Id);
             CmmJson.AppendProperty(json, "name", prefabName + " mesh " + part.MeshIndex);
+            AppendBuildingCategory(json, category);
             CmmJson.AppendProperty(json, "role", classification.Role);
             CmmJson.AppendProperty(json, "service", classification.Service);
             CmmJson.AppendProperty(json, "sub_service", classification.SubService);
@@ -133,8 +135,8 @@ namespace CSLModernMap.Systems
             for (var i = 0; i < part.Points.Length; i++)
             {
                 if (i > 0) json.Append(", ");
-                json.Append('[').Append(FormatFloat(part.Points[i].x)).Append(", ")
-                    .Append(FormatFloat(part.Points[i].y)).Append(']');
+                json.Append('[').Append(CmmJson.FormatFloat(part.Points[i].x)).Append(", ")
+                    .Append(CmmJson.FormatFloat(part.Points[i].y)).Append(']');
             }
             json.Append("]}}");
         }

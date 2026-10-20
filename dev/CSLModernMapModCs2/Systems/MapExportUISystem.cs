@@ -4,7 +4,9 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using Colossal.Mathematics;
+using Colossal.PSI.Common;
 using Game;
 using Game.City;
 using Game.UI.Localization;
@@ -29,6 +31,12 @@ namespace CSLModernMap.Systems
         private bool m_ExportArmed;
 
         private bool m_OpenAfterExport;
+
+        private Task<ExportResult> m_ExportTask;
+
+        private int m_ExportProgress;
+
+        private int m_ShownExportProgress;
 
         private static volatile bool s_RendererWorkRunning;
 
@@ -102,33 +110,33 @@ namespace CSLModernMap.Systems
             {
                 if (s_RendererWorkRunning)
                 {
-                    return IsChinese ? "正在安装查看器…" : "Installing renderer…";
+                    return global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.2CBC968E35");
                 }
 
                 if (!string.IsNullOrEmpty(s_RendererError))
                 {
-                    return (IsChinese ? "查看器不可用：" : "Renderer unavailable: ") + s_RendererError;
+                    return (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.A52C7E0D20")) + s_RendererError;
                 }
 
                 if (!RendererLauncher.IsSupported)
                 {
-                    return IsChinese ? "当前平台不支持查看器" : "Renderer unavailable on this platform";
+                    return global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.5FC5374073");
                 }
 
                 if (!RendererLauncher.HasPayload)
                 {
-                    return IsChinese ? "随包文件缺失" : "Bundled renderer files are missing";
+                    return global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.BCF7D8C55D");
                 }
 
                 if (RendererLauncher.IsInstalled)
                 {
-                    return (IsChinese ? "已就绪 · " : "Ready · ") + RendererLauncher.PayloadVersion;
+                    return (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.C9D3F3D2BF")) + RendererLauncher.PayloadVersion;
                 }
 
                 return RendererLauncher.HasOlderInstallation
-                    ? (IsChinese ? "待更新至 " : "Update available: ") + RendererLauncher.PayloadVersion
-                        + (IsChinese ? "，点击下方安装 / 更新" : "; use Install / Update below")
-                    : (IsChinese ? "未安装，点击下方安装 / 更新" : "Not installed; use Install / Update below");
+                    ? (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.E726AAB194")) + RendererLauncher.PayloadVersion
+                        + (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.110B58EB74"))
+                    : (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.41D3D2CC44"));
             }
         }
 
@@ -204,7 +212,7 @@ namespace CSLModernMap.Systems
 
                 ShellFolder.RevealOrCopy(
                     ExportPaths.ExportDirectory,
-                    message => ShowNotification(ResultNoticeId, message));
+                    message => ShowNotification(FolderNoticeId, message));
             }
 
             if (s_OpenRendererFolderRequested)
@@ -218,7 +226,13 @@ namespace CSLModernMap.Systems
                 s_CopyFolderRequested = false;
                 ShellFolder.CopyOrComplain(
                     ExportPaths.ExportDirectory,
-                    message => ShowNotification(ResultNoticeId, message));
+                    message => ShowNotification(FolderNoticeId, message));
+            }
+
+            if (m_ExportTask != null)
+            {
+                UpdateExport();
+                return;
             }
 
             if (m_ExportArmed)
@@ -236,7 +250,7 @@ namespace CSLModernMap.Systems
             m_ExportRequested = false;
             m_ExportArmed = true;
             ExportReport.MarkQueued();
-            ShowNotification(StartNoticeId, ExportReport.StartNotice);
+            ShowNotification(ResultNoticeId, ExportReport.StartNotice, ProgressState.Indeterminate, 0);
         }
 
         private EntityQuery CreateStableQuery(ComponentType component)
@@ -270,15 +284,15 @@ namespace CSLModernMap.Systems
                 return;
             }
 
-            if (!s_Instance.m_ExportRequested && !s_Instance.m_ExportArmed)
+            if (!ExportReport.IsBusy)
             {
                 if (openAfterwards && RendererLauncher.HasPayload
                     && !RendererLauncher.IsInstalled && RendererLauncher.HasOlderInstallation)
                 {
                     s_Instance.ShowNotification(RendererStartNoticeId,
-                        (IsChinese ? "查看器待更新至 " : "Renderer update available: ")
+                        (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.QueueExport.57CD67E80A"))
                         + RendererLauncher.PayloadVersion
-                        + (IsChinese ? "，导出后将自动更新" : "; updating after export"));
+                        + (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.QueueExport.606539105E")));
                 }
 
                 s_Instance.m_OpenAfterExport = openAfterwards;
@@ -296,9 +310,7 @@ namespace CSLModernMap.Systems
 
             if (!RendererLauncher.HasPayload)
             {
-                FailRenderer(IsChinese
-                    ? "随包查看器文件缺失，请重新安装模组"
-                    : "bundled renderer files are missing — reinstall the mod");
+                FailRenderer(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RequestInstallRenderer.01A918F707"));
                 return;
             }
 
@@ -306,9 +318,7 @@ namespace CSLModernMap.Systems
             StartRendererWork(() =>
             {
                 RendererLauncher.EnsureInstalled(true);
-                PostRendererNotice(IsChinese
-                    ? "查看器已就绪（" + RendererLauncher.PayloadVersion + "）"
-                    : "Renderer ready (" + RendererLauncher.PayloadVersion + ")");
+                PostRendererNotice(string.Format(System.Globalization.CultureInfo.InvariantCulture, global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RequestInstallRenderer.AB6548D24F"), RendererLauncher.PayloadVersion));
             });
         }
 
@@ -321,9 +331,7 @@ namespace CSLModernMap.Systems
 
             if (!RendererLauncher.HasPayload)
             {
-                FailRenderer(IsChinese
-                    ? "随包查看器文件缺失，请重新安装模组"
-                    : "bundled renderer files are missing — reinstall the mod");
+                FailRenderer(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.OpenInRenderer.01A918F707"));
                 return;
             }
 
@@ -332,7 +340,7 @@ namespace CSLModernMap.Systems
             if (installing)
             {
                 ShowNotification(RendererStartNoticeId, updating
-                    ? (IsChinese ? "正在更新查看器至 " : "Updating renderer to ")
+                    ? (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.OpenInRenderer.8CB1C7E5AC"))
                         + RendererLauncher.PayloadVersion
                     : InstallingRendererNotice);
             }
@@ -343,9 +351,7 @@ namespace CSLModernMap.Systems
                 RendererLauncher.Launch(exportPath);
                 if (installing)
                 {
-                    PostRendererNotice(IsChinese
-                        ? "查看器已就绪并已打开导出文件"
-                        : "Renderer ready and export opened");
+                    PostRendererNotice(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.OpenInRenderer.B5717EE887"));
                 }
             });
         }
@@ -392,9 +398,9 @@ namespace CSLModernMap.Systems
         private static void FailRenderer(string reason)
         {
             s_RendererError = string.IsNullOrEmpty(reason)
-                ? (IsChinese ? "未知错误" : "unknown error")
+                ? (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.FailRenderer.13A46616E1"))
                 : reason;
-            PostRendererNotice((IsChinese ? "查看器失败：" : "Renderer failed: ") + s_RendererError);
+            PostRendererNotice((global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.FailRenderer.0DE817BA18")) + s_RendererError);
         }
 
         private static void PostRendererNotice(string message)
@@ -403,18 +409,7 @@ namespace CSLModernMap.Systems
         }
 
         private static string InstallingRendererNotice =>
-            IsChinese ? "正在安装查看器，请稍候" : "Installing renderer, please wait";
-
-        private static bool IsChinese
-        {
-            get
-            {
-                var manager = Game.SceneFlow.GameManager.instance?.localizationManager;
-                var locale = manager?.activeLocaleId;
-                return !string.IsNullOrEmpty(locale)
-                    && locale.StartsWith("zh", StringComparison.OrdinalIgnoreCase);
-            }
-        }
+            global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.InstallingRendererNotice.CB8FD8567A");
 
         private static void ShowNotificationOnGameThread(string notificationId, string message)
         {
@@ -463,11 +458,52 @@ namespace CSLModernMap.Systems
                     var noCity = ExportReport.NoCityReason;
                     Mod.log.Warn("[export] 已拒绝请求：当前没有道路节点");
                     ExportReport.MarkFailed(noCity);
-                    ShowNotification(ResultNoticeId, ExportReport.FailureNotice(noCity));
+                    m_OpenAfterExport = false;
+                    ShowNotification(ResultNoticeId, ExportReport.FailureNotice(noCity), ProgressState.Failed, 0);
                     return;
                 }
 
-                var result = WriteCmmExport();
+                var result = CaptureCmmExport(out var text);
+                m_ExportProgress = -1;
+                m_ShownExportProgress = -1;
+                ShowNotification(ResultNoticeId,
+                    global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.ExportProgress.Validating"),
+                    ProgressState.Indeterminate, 0);
+
+                // 后台只处理已采集的文本，不访问 ECS、游戏系统或 UI。
+                m_ExportTask = Task.Run(() =>
+                {
+                    CmmWriter.ValidateAndWrite(result.Path, text,
+                        progress => Volatile.Write(ref m_ExportProgress, progress));
+                    return result;
+                });
+            }
+            catch (Exception e)
+            {
+                FailExport(e);
+            }
+        }
+
+        private void UpdateExport()
+        {
+            if (!m_ExportTask.IsCompleted)
+            {
+                var progress = Volatile.Read(ref m_ExportProgress);
+                if (progress != m_ShownExportProgress)
+                {
+                    m_ShownExportProgress = progress;
+                    ShowNotification(ResultNoticeId, string.Format(CultureInfo.InvariantCulture,
+                        global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.ExportProgress.Writing"), progress),
+                        ProgressState.Progressing, progress);
+                }
+                return;
+            }
+
+            var task = m_ExportTask;
+            m_ExportTask = null;
+            try
+            {
+                var result = task.GetAwaiter().GetResult();
                 ExportReport.MarkSucceeded(result);
                 Mod.log.Info(string.Format(
                     "[export] CMM地图已写出: {0}（节点={1}，路网={2}，建筑={3}，站点={4}，线路={5}，issues={6}）",
@@ -478,7 +514,7 @@ namespace CSLModernMap.Systems
                     result.StopCount,
                     result.LineCount,
                     result.IssueCount));
-                ShowNotification(ResultNoticeId, ExportReport.ResultNotice(result));
+                ShowNotification(ResultNoticeId, ExportReport.ResultNotice(result), ProgressState.Complete, 100);
 
                 if (m_OpenAfterExport)
                 {
@@ -488,11 +524,17 @@ namespace CSLModernMap.Systems
             }
             catch (Exception e)
             {
-                Mod.log.Error("[export] 导出失败: " + e);
-                var reason = ExportReport.ShortReason(e);
-                ExportReport.MarkFailed(reason);
-                ShowNotification(ResultNoticeId, ExportReport.FailureNotice(reason));
+                FailExport(e);
             }
+        }
+
+        private void FailExport(Exception e)
+        {
+            m_OpenAfterExport = false;
+            Mod.log.Error("[export] 导出失败: " + e);
+            var reason = ExportReport.ShortReason(e);
+            ExportReport.MarkFailed(reason);
+            ShowNotification(ResultNoticeId, ExportReport.FailureNotice(reason), ProgressState.Failed, 0);
         }
 
         private string ReadCityName()
@@ -522,98 +564,16 @@ namespace CSLModernMap.Systems
             return "";
         }
 
-        private Game.UI.NameSystem GetNameSystem(string context)
-        {
-            try
-            {
-                return World.GetOrCreateSystemManaged<Game.UI.NameSystem>();
-            }
-            catch (Exception e)
-            {
-                Mod.log.Warn("[" + context + "] NameSystem不可用: "
-                    + e.GetType().Name + ": " + e.Message);
-                return null;
-            }
-        }
-
-        private static bool TryGetCustomDisplayName(
-            Game.UI.NameSystem nameSystem,
-            Entity entity,
-            string context,
-            out string name)
-        {
-            name = "";
-            if (nameSystem == null || entity == Entity.Null)
-            {
-                return false;
-            }
-
-            try
-            {
-                string customName;
-                if (!nameSystem.TryGetCustomName(entity, out customName)
-                    || string.IsNullOrEmpty(customName))
-                {
-                    return false;
-                }
-
-                name = nameSystem.GetRenderedLabelName(entity) ?? customName;
-                if (string.IsNullOrEmpty(name))
-                {
-                    name = customName;
-                }
-                return !string.IsNullOrEmpty(name);
-            }
-            catch (Exception e)
-            {
-                Mod.log.Warn("[" + context + "] 自定义名称解析失败: "
-                    + e.GetType().Name + ": " + e.Message);
-                return false;
-            }
-        }
-
-        /// <summary>分别读取显示名称与自定义名称来源以避免混淆自动命名</summary>
         private static string GetRenderedDisplayName(
-            Game.UI.NameSystem nameSystem,
-            Entity entity,
-            string context,
-            out bool isCustom)
+            Game.UI.NameSystem nameSystem, Entity entity, string context, out bool isCustom)
         {
-            isCustom = false;
             if (nameSystem == null || entity == Entity.Null)
-            {
-                return "";
-            }
-
-            string rendered;
-            try
-            {
-                rendered = nameSystem.GetRenderedLabelName(entity) ?? "";
-            }
-            catch (Exception e)
-            {
-                Mod.log.Warn("[" + context + "] 显示名称解析失败: "
-                    + e.GetType().Name + ": " + e.Message);
-                return "";
-            }
-
-            try
-            {
-                string customName;
-                isCustom = nameSystem.TryGetCustomName(entity, out customName)
-                    && !string.IsNullOrEmpty(customName);
-                return string.IsNullOrEmpty(rendered) && isCustom
-                    ? customName
-                    : rendered;
-            }
-            catch (Exception e)
-            {
-                Mod.log.Warn("[" + context + "] 名称来源判定失败: "
-                    + e.GetType().Name + ": " + e.Message);
-                return rendered;
-            }
+                throw new InvalidOperationException("[" + context + "] 名称来源不可用");
+            string customName;
+            isCustom = nameSystem.TryGetCustomName(entity, out customName)
+                && !string.IsNullOrEmpty(customName);
+            return isCustom ? customName : nameSystem.GetRenderedLabelName(entity) ?? "";
         }
-
 
         private string GetPrefabName(Entity prefab)
         {
@@ -691,9 +651,9 @@ namespace CSLModernMap.Systems
 
         private static void AppendVec3(StringBuilder json, Unity.Mathematics.float3 value)
         {
-            json.Append("{\"x\": ").Append(FormatFloat(value.x))
-                .Append(", \"y\": ").Append(FormatFloat(value.y))
-                .Append(", \"z\": ").Append(FormatFloat(value.z)).Append('}');
+            json.Append("{\"x\": ").Append(CmmJson.FormatFloat(value.x))
+                .Append(", \"y\": ").Append(CmmJson.FormatFloat(value.y))
+                .Append(", \"z\": ").Append(CmmJson.FormatFloat(value.z)).Append('}');
         }
 
         private static string CombineIssueArrays(string first, string second)
@@ -711,25 +671,16 @@ namespace CSLModernMap.Systems
             return first.Substring(0, first.Length - 1) + ", " + second.Substring(1);
         }
 
-        private static string FormatFloat(float value)
-        {
-            if (float.IsNaN(value) || float.IsInfinity(value))
-            {
-                return "0";
-            }
-
-            return value.ToString("0.###", CultureInfo.InvariantCulture);
-        }
-
-        private const string StartNoticeId = "CSLModernMap.Export.Start";
-
         private const string ResultNoticeId = "CSLModernMap.Export.Result";
+
+        private const string FolderNoticeId = "CSLModernMap.Export.Folder";
 
         private const string RendererStartNoticeId = "CSLModernMap.Renderer.Start";
 
         private const string RendererNoticeId = "CSLModernMap.Renderer.Result";
 
-        private void ShowNotification(string notificationId, string message)
+        private void ShowNotification(string notificationId, string message,
+            ProgressState? progressState = null, int? progress = null)
         {
             try
             {
@@ -739,8 +690,8 @@ namespace CSLModernMap.Systems
                     LocalizedString.Value(ExportReport.NoticeTitle),
                     LocalizedString.Value(message),
                     string.Empty,
-                    null,
-                    null,
+                    progressState,
+                    progress,
                     null);
             }
             catch (Exception e)

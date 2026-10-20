@@ -69,10 +69,11 @@ namespace CSLModernMap.Systems
             m_SkippedMarkerNetworkCount = 0;
             m_CustomRoadNameCount = 0;
 
+            var nameSystem = World.GetOrCreateSystemManaged<Game.UI.NameSystem>();
             var entities = m_EdgeQuery.ToEntityArray(Allocator.Temp);
             var geometryContext = Cs2Geometry.BuildRoadGeometryContext(EntityManager);
-            var nameSystem = GetNameSystem("networks");
             var roadNameCache = new Dictionary<Entity, string>();
+            var gameRoadNameCache = new Dictionary<Entity, string>();
             var written = 0;
             try
             {
@@ -135,6 +136,7 @@ namespace CSLModernMap.Systems
                     var mode = section.Form;
                     var level = GetNetworkLevel(kind, section);
                     var displayName = "";
+                    var gameName = "";
                     if (kind == "ROAD" && EntityManager.HasComponent<Game.Net.Road>(entity))
                     {
                         var nameEntity = entity;
@@ -151,13 +153,13 @@ namespace CSLModernMap.Systems
 
                         if (!roadNameCache.TryGetValue(nameEntity, out displayName))
                         {
-                            if (!TryGetCustomDisplayName(
-                                nameSystem, nameEntity, "networks", out displayName))
-                            {
-                                displayName = "";
-                            }
+                            bool isCustom;
+                            var rendered = GetRenderedDisplayName(nameSystem, nameEntity, "networks", out isCustom);
+                            displayName = isCustom ? rendered : "";
+                            gameRoadNameCache[nameEntity] = isCustom ? "" : rendered;
                             roadNameCache[nameEntity] = displayName;
                         }
+                        gameName = gameRoadNameCache[nameEntity];
                     }
                     var direction = section.Forward && section.Backward
                         ? 0
@@ -203,7 +205,7 @@ namespace CSLModernMap.Systems
                     }
                     json.Append(", \"mode\": ");
                     CmmJson.AppendString(json, mode);
-                    json.Append(", \"width\": ").Append(FormatFloat(width));
+                    json.Append(", \"width\": ").Append(CmmJson.FormatFloat(width));
                     if (level != null)
                     {
                         json.Append(", \"level\": ");
@@ -226,6 +228,7 @@ namespace CSLModernMap.Systems
                     json.Append(", \"transit_for\": null, \"path_segment_ids\": [], \"platform\": false");
                     CmmJson.AppendProperty(json, "name", name);
                     CmmJson.AppendProperty(json, "display_name", displayName);
+                    CmmJson.AppendProperty(json, "game_name", gameName);
                     CmmJson.AppendProperty(json, "source_raw", name);
                     json.Append('}');
                     written++;
@@ -603,9 +606,9 @@ namespace CSLModernMap.Systems
                 }
 
                 json.Append('[')
-                    .Append(FormatFloat(points[i].x))
+                    .Append(CmmJson.FormatFloat(points[i].x))
                     .Append(',')
-                    .Append(FormatFloat(points[i].z))
+                    .Append(CmmJson.FormatFloat(points[i].z))
                     .Append(']');
             }
         }
@@ -662,11 +665,6 @@ namespace CSLModernMap.Systems
             if (section.Highway)
             {
                 return "HIGHWAY";
-            }
-
-            if (section.Taxiway)
-            {
-                return "SPECIAL";
             }
 
             if (section.CarLanes == 0 && section.HasPedestrianLanes)

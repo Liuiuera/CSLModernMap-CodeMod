@@ -459,7 +459,9 @@ namespace CSLModernMap.Systems
             var span = math.distance(nodePosition, boundaryPoint);
             var handle = StartTrim(
                 new Line3.Segment(boundaryPoint, boundaryTangent),
-                span * 0.33f).b;
+                -span * 0.33f).b;
+            // The incoming handle must lie behind the start of the main curve.
+            // A positive trim overshoots the boundary and folds the connection.
             return new Bezier4x3(nodePosition, nodePosition, handle, boundaryPoint);
         }
 
@@ -471,7 +473,9 @@ namespace CSLModernMap.Systems
             var span = math.distance(boundaryPoint, nodePosition);
             var handle = StartTrim(
                 new Line3.Segment(boundaryPoint, boundaryTangent),
-                span * 0.33f).b;
+                -span * 0.33f).b;
+            // boundaryTangent is the main curve's preceding control point;
+            // extend away from it to continue towards the end node.
             return new Bezier4x3(boundaryPoint, handle, nodePosition, nodePosition);
         }
 

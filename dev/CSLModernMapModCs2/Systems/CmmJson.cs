@@ -10,6 +10,16 @@ namespace CSLModernMap.Systems
     /// <summary>生成地图数据的序列化内容</summary>
     internal static class CmmJson
     {
+        internal static string FormatFloat(float value)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value))
+            {
+                throw new ArgumentOutOfRangeException(nameof(value), value,
+                    "Exported numeric values must be finite.");
+            }
+            return value.ToString("0.###", CultureInfo.InvariantCulture);
+        }
+
         private static string Escape(string value)
         {
             if (string.IsNullOrEmpty(value))
@@ -107,7 +117,7 @@ namespace CSLModernMap.Systems
         internal static string BuildCounters(
             Dictionary<string, int> counts)
         {
-            if (counts == null || counts.Count == 0)
+            if (counts.Count == 0)
             {
                 return "{}";
             }
