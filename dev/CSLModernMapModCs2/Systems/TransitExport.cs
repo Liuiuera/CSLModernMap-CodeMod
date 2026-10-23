@@ -50,7 +50,7 @@ namespace CSLModernMap.Systems
         private struct StopRecord
         {
             internal int Id;
-            internal int NetworkNodeId;
+            internal int? NetworkNodeId;
             internal string Kind;
             internal string NameText;
             internal string NameSource;
@@ -76,20 +76,12 @@ namespace CSLModernMap.Systems
             var nameSystem = world.GetOrCreateSystemManaged<Game.UI.NameSystem>();
 
             var stops = CollectStops(
-                em, getPrefabName, nameSystem, exportedNodes, exportedNetworks, issues,
-                out var unresolvedStops);
+                em, getPrefabName, nameSystem, exportedNodes, exportedNetworks, issues);
             var result = CollectLinesAndRoutes(
                 em, getPrefabName, nameSystem, stops, derived, issues);
 
             stops.Sort((a, b) => a.Id.CompareTo(b.Id));
             result.StopsJson = SerializeStops(stops);
-
-            if (unresolvedStops > 0)
-            {
-                issues.Warn("TRANSIT_STOP_NODE_UNRESOLVED",
-                    unresolvedStops + " 个站点无法沿Owner链锚定到已导出的Game.Net.Node"
-                    + "（无Building.m_RoadEdge / Attached可导出段），受影响线路不可验证");
-            }
 
             result.Issues = issues.ToJson();
             result.IssueCount = issues.Count;
@@ -104,10 +96,8 @@ namespace CSLModernMap.Systems
             Game.UI.NameSystem nameSystem,
             HashSet<Entity> exportedNodes,
             HashSet<Entity> exportedNetworks,
-            CmmIssueCollector issues,
-            out int unresolvedStops)
+            CmmIssueCollector issues)
         {
-            unresolvedStops = 0;
             var records = new List<StopRecord>();
 
             var query = em.CreateEntityQuery(new EntityQueryDesc
@@ -121,7 +111,6 @@ namespace CSLModernMap.Systems
                 None = new[]
                 {
                     ComponentType.ReadOnly<Game.Common.Deleted>(),
-                    ComponentType.ReadOnly<Game.Objects.OutsideConnection>(),
                     ComponentType.ReadOnly<Game.Tools.Temp>()
                 }
             });
@@ -144,12 +133,6 @@ namespace CSLModernMap.Systems
 
                     var node = AnchorToNetworkNode(
                         em, entity, exportedNodes, exportedNetworks, out _);
-                    if (node == Entity.Null)
-                    {
-                        unresolvedStops++;
-                        continue;
-                    }
-
                     string nameText;
                     string nameSource;
                     ResolveEntityName(
@@ -189,7 +172,7 @@ namespace CSLModernMap.Systems
                     records.Add(new StopRecord
                     {
                         Id = entity.Index,
-                        NetworkNodeId = node.Index,
+                        NetworkNodeId = node == Entity.Null ? (int?)null : node.Index,
                         Kind = kind,
                         NameText = nameText,
                         NameSource = nameSource,
@@ -411,12 +394,8 @@ namespace CSLModernMap.Systems
                     var prefabName = getPrefabName(prefab) ?? "";
                     var lineTypeKeyword = MapLineTypeKeyword(lineData.m_TransportType);
                     var transitKind = MapStopKind(lineData.m_TransportType);
-                    var curveJoinDistance = TransitPathContinuity.CurveJoinDistance(
-                        em.GetComponentData<Game.Prefabs.RouteData>(prefab).m_Width);
-
                     var stopIds = new List<int>();
                     var stopWaypoints = new List<int>();
-                    var incompleteStops = false;
                     var waypoints = em.GetBuffer<Game.Routes.RouteWaypoint>(entity);
                     for (var w = 0; w < waypoints.Length; w++)
                     {
@@ -425,9 +404,8 @@ namespace CSLModernMap.Systems
                         {
                             if (waypoint == Entity.Null)
                             {
-                                incompleteStops = true;
                                 issues.Error("TRANSIT_WAYPOINT_REFERENCE", "Line " + entity.Index
-                                    + ", waypoint " + w + ": 停靠引用损坏，此路线不可验证");
+                                    + ", waypoint " + w + ": 停靠引用缺失");
                             }
                             continue;
                         }
@@ -444,9 +422,8 @@ namespace CSLModernMap.Systems
                         stopWaypoints.Add(w);
                         if (!stopById.ContainsKey(connected.Index))
                         {
-                            incompleteStops = true;
                             issues.Error("TRANSIT_ROUTE_STOP_UNRESOLVED",
-                                "Line " + entity.Index + ", waypoint " + w + ": stop " + connected.Index + " 未导出，保留引用并停止验证此路线");
+                                "Line " + entity.Index + ", waypoint " + w + ": stop " + connected.Index + " 未导出");
                         }
                     }
 
@@ -456,22 +433,7 @@ namespace CSLModernMap.Systems
                     for (var s = 0; s < segments.Length; s++)
                     {
                         var segment = segments[s].m_Segment;
-                        if (segment == Entity.Null || !em.HasComponent<Game.Routes.Segment>(segment)
-                            || !em.HasComponent<Game.Common.Owner>(segment)
-                            || em.GetComponentData<Game.Common.Owner>(segment).m_Owner != entity)
-                        {
-                            incompleteStops = true;
-                            issues.Warn("TRANSIT_SEGMENT_REFERENCE", "Line " + entity.Index + ", segment buffer " + s + ": 无有效路段归属");
-                            continue;
-                        }
-                        // 游戏 RoutePathSystem.SetupPathfind 用 Segment.m_Index 取起点，下一下标取终点并回绕。
                         var index = em.GetComponentData<Game.Routes.Segment>(segment).m_Index;
-                        if (index < 0 || index >= waypoints.Length || sourceSegments.ContainsKey(index))
-                        {
-                            incompleteStops = true;
-                            issues.Warn("TRANSIT_SEGMENT_INDEX", "Line " + entity.Index + ": 重复或越界的原始路段下标 " + index);
-                            continue;
-                        }
                         sourceSegments.Add(index, segment);
                     }
 
@@ -483,50 +445,23 @@ namespace CSLModernMap.Systems
                     foreach (var interval in intervals)
                     {
                         var legIds = new List<int>();
-                        var legPoints = new List<float3>();
-                        var complete = !incompleteStops;
-                        var source = "none";
                         foreach (var index in interval.SegmentIndices)
                         {
                             if (!sourceSegments.TryGetValue(index, out var segment))
                             {
-                                complete = false;
+                                issues.Warn("TRANSIT_SEGMENT_MISSING", "Line " + entity.Index
+                                    + ", waypoint " + index + ": 缺少线路路段");
                                 continue;
                             }
-                            var path = ReadRoutePath(em, segment, waypoints[index].m_Waypoint,
-                                waypoints[(index + 1) % waypoints.Length].m_Waypoint,
-                                transitKind, curveJoinDistance, derived);
-                            if (!path.Complete)
-                                issues.Warn("TRANSIT_SOURCE_PATH_PARTIAL", "Line " + entity.Index + ", waypoint " + index
-                                    + ", segment " + segment.Index + ": " + path.Reason);
-                            complete &= path.Complete;
-                            if (legPoints.Count > 0 && path.Points.Count > 0
-                                && math.distance(legPoints[legPoints.Count - 1], path.Points[0]) > 1f)
-                                complete = false;
-                            legIds.AddRange(path.Ids);
-                            legPoints.AddRange(path.Points);
-                            if (source == "none") source = path.Source;
-                            else if (path.Source != "none" && source != path.Source) source = "mixed";
+                            legIds.AddRange(ReadRoutePath(em, segment, transitKind, derived, issues));
                         }
-                        complete &= legIds.Count > 0;
                         pathSegmentIds.AddRange(legIds);
                         if (legsJson.Length > 0) legsJson.Append(", ");
                         legsJson.Append("{\"from_stop_index\": ").Append(interval.From)
                             .Append(", \"to_stop_index\": ").Append(interval.To)
                             .Append(", \"path_segment_ids\": [");
                         AppendIds(legsJson, legIds);
-                        legsJson.Append(']');
-                        CmmJson.AppendProperty(legsJson, "geometry_source", source);
-                        legsJson.Append('}');
-                        if (!complete)
-                            issues.Warn("TRANSIT_LEG_PARTIAL", "Line " + entity.Index + ", leg " + interval.From + "->" + interval.To + ": 路径或方向未通过验证");
-                        if (complete)
-                        {
-                            derived.AddRouteCarrier(
-                                entity.Index, transitKind, lineTypeKeyword + " Line",
-                                stopById[stopIds[interval.From]].NetworkNodeId,
-                                stopById[stopIds[interval.To]].NetworkNodeId, legPoints, legIds);
-                        }
+                        legsJson.Append("]}");
                     }
 
                     var geometryKind = pathSegmentIds.Count > 0 ? "path_chain" : "stop_direct";
@@ -627,88 +562,44 @@ namespace CSLModernMap.Systems
             return result;
         }
 
-        private sealed class RoutePath
+        private static List<int> ReadRoutePath(EntityManager em, Entity segment,
+            string kind, Cs2DerivedNetworkState derived, CmmIssueCollector issues)
         {
-            internal readonly List<int> Ids = new List<int>();
-            internal readonly List<float3> Points = new List<float3>();
-            internal string Source = "none";
-            internal bool Complete = true;
-            internal string Reason = "";
-        }
-
-        private static RoutePath ReadRoutePath(EntityManager em, Entity segment, Entity fromWaypoint,
-            Entity toWaypoint, string kind, float curveJoinDistance, Cs2DerivedNetworkState derived)
-        {
-            var result = new RoutePath();
+            var ids = new List<int>();
             if (em.HasComponent<Game.Routes.CurveElement>(segment)
                 && em.GetBuffer<Game.Routes.CurveElement>(segment).Length > 0)
             {
-                result.Source = "CurveElement";
                 var curves = em.GetBuffer<Game.Routes.CurveElement>(segment);
                 for (var i = 0; i < curves.Length; i++)
-                    AddPathPiece(result, derived, segment.Index, kind,
-                        Cs2Geometry.BuildPath(curves[i].m_Curve, new float2(0f, 1f)), curveJoinDistance);
+                {
+                    var id = derived.AddRouteSegment(segment.Index, kind,
+                        Cs2Geometry.BuildPath(curves[i].m_Curve, new float2(0f, 1f)));
+                    if (id != 0) ids.Add(id);
+                }
             }
             else if (em.HasComponent<Game.Pathfind.PathElement>(segment))
             {
-                result.Source = "PathElement";
                 var elements = em.GetBuffer<Game.Pathfind.PathElement>(segment);
                 for (var i = 0; i < elements.Length; i++)
                 {
                     var element = elements[i];
-                    if (element.m_Target == Entity.Null || !em.HasComponent<Game.Net.Curve>(element.m_Target)
-                        || em.HasComponent<Game.Objects.OutsideConnection>(element.m_Target))
+                    if (em.HasComponent<Game.Objects.OutsideConnection>(element.m_Target))
+                        continue;
+                    if (!em.HasComponent<Game.Net.Curve>(element.m_Target))
                     {
-                        result.Complete = false;
-                        result.Reason = "PathElement 缺少可读取曲线";
+                        issues.Warn("TRANSIT_PATH_CURVE_MISSING", "Segment " + segment.Index
+                            + ", path element " + i + ": 缺少路径曲线");
                         continue;
                     }
-                    AddPathPiece(result, derived, element.m_Target.Index, kind,
+                    var id = derived.AddRouteSegment(element.m_Target.Index, kind,
                         Cs2Geometry.BuildPath(em.GetComponentData<Game.Net.Curve>(element.m_Target).m_Bezier,
                             element.m_TargetDelta));
+                    if (id != 0) ids.Add(id);
                 }
             }
-            if (result.Points.Count < 2)
-            {
-                result.Complete = false;
-                result.Reason = "缺少完整曲线";
-                return result;
-            }
-            if (!em.HasComponent<Game.Routes.PathTargets>(segment)
-                || !em.HasComponent<Game.Routes.RouteLane>(fromWaypoint)
-                || !em.HasComponent<Game.Routes.RouteLane>(toWaypoint))
-            {
-                result.Complete = false;
-                result.Reason = "缺少原生路径端点关系";
-                return result;
-            }
-            var targets = em.GetComponentData<Game.Routes.PathTargets>(segment);
-            var from = em.GetComponentData<Game.Routes.RouteLane>(fromWaypoint);
-            var to = em.GetComponentData<Game.Routes.RouteLane>(toWaypoint);
-            // 与游戏 SetupPathfind 的端点契约相同；采样容差一米，不使用站台到锚点的距离。
-            if (targets.m_StartLane != from.m_EndLane || targets.m_EndLane != to.m_StartLane
-                || math.abs(targets.m_CurvePositions.x - from.m_EndCurvePos) >= 0.001f
-                || math.abs(targets.m_CurvePositions.y - to.m_StartCurvePos) >= 0.001f
-                || math.distance(result.Points[0], targets.m_ReadyStartPosition) > 1f
-                || math.distance(result.Points[result.Points.Count - 1], targets.m_ReadyEndPosition) > 1f)
-            {
-                result.Complete = false;
-                result.Reason = "曲线方向/端点与原生 RouteLane、PathTargets 不一致";
-            }
-            return result;
-        }
-
-        private static void AddPathPiece(RoutePath result, Cs2DerivedNetworkState derived,
-            int sourceEntity, string kind, List<float3> points, float joinDistance = 1f)
-        {
-            if (!TransitPathContinuity.Join(result.Points, points, joinDistance))
-            {
-                result.Complete = false;
-                result.Reason = "有向曲线存在缺口";
-            }
-            var id = derived.AddRouteSegment(sourceEntity, kind, points);
-            if (id != 0) result.Ids.Add(id);
-            result.Points.AddRange(points);
+            if (ids.Count == 0)
+                issues.Warn("TRANSIT_PATH_MISSING", "Segment " + segment.Index + ": 缺少线路曲线");
+            return ids;
         }
 
         private static void AppendIds(StringBuilder json, List<int> ids)
@@ -832,7 +723,8 @@ namespace CSLModernMap.Systems
                 }
 
                 json.Append("    {\"id\": ").Append(stop.Id)
-                    .Append(", \"network_node_id\": ").Append(stop.NetworkNodeId)
+                    .Append(", \"network_node_id\": ").Append(stop.NetworkNodeId.HasValue
+                        ? stop.NetworkNodeId.Value.ToString(CultureInfo.InvariantCulture) : "null")
                     .Append(", \"kind\": ");
                 CmmJson.AppendString(json, stop.Kind);
                 json.Append(", \"name\": {\"text\": ");

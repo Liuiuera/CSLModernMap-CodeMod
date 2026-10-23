@@ -70,29 +70,6 @@ namespace CSLModernMap.Systems
                 0f);
         }
 
-        internal int AddRouteCarrier(
-            int sourceEntity,
-            string transitKind,
-            string name,
-            int startId,
-            int endId,
-            List<float3> points,
-            List<int> pathSegmentIds)
-        {
-            return AddNetwork(
-                sourceEntity,
-                "route_link",
-                "STOP_LINE",
-                "GROUND",
-                transitKind,
-                startId,
-                endId,
-                points,
-                0f,
-                pathSegmentIds,
-                name);
-        }
-
         internal void AppendNodes(StringBuilder json, int existingCount)
         {
             for (var i = 0; i < m_Nodes.Count; i++)

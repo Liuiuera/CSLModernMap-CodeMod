@@ -148,7 +148,6 @@ namespace CSLModernMap.Systems
             json.Append("  \"extensions\": {\"map_tile_grid\": ").Append(mapTileGrid);
             json.Append(", \"cs2\": {\"game_version\": ");
             CmmJson.AppendString(json, Application.version);
-            json.Append(", \"transit_contract_version\": 2");
             json.Append(", \"world\": ");
             CmmJson.AppendString(json, World.Name);
             json.Append(", \"traffic_snapshot\": ").Append(traffic.MetadataJson());
