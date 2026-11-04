@@ -64,19 +64,8 @@ namespace CSLModernMap.Systems
 
         internal string MetadataJson() => m_Metadata.ToString(Formatting.None);
 
-        internal string IssuesJson()
-        {
-            var issues = new CmmIssueCollector();
-            if (SegmentCount > ValidSegmentCount)
-                issues.Warn("TRAFFIC_NO_SAMPLES", (SegmentCount - ValidSegmentCount)
-                    + " 条道路在导出时点缺少有效原生交通统计，已保留为无数据");
-            return issues.ToJson();
-        }
-
-        internal int IssueCount => SegmentCount > ValidSegmentCount ? 1 : 0;
-
         internal void AddRoad(EntityManager em, Entity entity, IList<float3> points,
-            float width, string name, string prefabName, string level)
+            float width, string name, string prefabName, string level, CmmIssueCollector issues)
         {
             if (!em.HasComponent<Game.Net.Road>(entity) || points.Count < 2) return;
             var road = em.GetComponentData<Game.Net.Road>(entity);
@@ -87,7 +76,7 @@ namespace CSLModernMap.Systems
             string key = entity.Index.ToString(CultureInfo.InvariantCulture);
             m_Volumes[key] = volume < 0 ? JValue.CreateNull() : new JValue(volume);
 
-            var lanes = ReadLanes(em, entity);
+            var lanes = ReadLanes(em, entity, issues);
             float congestionSum = 0, validWidth = 0;
             bool forward = false, backward = false, busLane = false;
             foreach (JObject lane in lanes)
@@ -128,7 +117,7 @@ namespace CSLModernMap.Systems
         }
 
         /// <summary>只统计道路中点横断面上的实际车道</summary>
-        private JArray ReadLanes(EntityManager em, Entity road)
+        private JArray ReadLanes(EntityManager em, Entity road, CmmIssueCollector issues)
         {
             var result = new JArray();
             if (!em.HasBuffer<Game.Net.SubLane>(road)) return result;
@@ -138,51 +127,85 @@ namespace CSLModernMap.Systems
             float length = math.length(tangent);
             if (length < 0.001f) return result;
             float2 normal = new float2(-tangent.y, tangent.x) / length;
-            var subLanes = em.GetBuffer<Game.Net.SubLane>(road, true);
+            DynamicBuffer<Game.Net.SubLane> subLanes;
+            try
+            {
+                subLanes = em.GetBuffer<Game.Net.SubLane>(road, true);
+            }
+            catch (Exception error) when (error is ArgumentException
+                || error is InvalidOperationException && !(error is ObjectDisposedException))
+            {
+                issues.Warn("TRAFFIC_LANE_UNAVAILABLE", "Segment " + road.Index
+                    + " lane traffic omitted: " + error.Message);
+                return result;
+            }
             var seen = new HashSet<Entity>();
             for (int i = 0; i < subLanes.Length; i++)
             {
-                var lane = subLanes[i].m_SubLane;
-                if (!seen.Add(lane) || !em.HasComponent<Game.Net.CarLane>(lane)
-                    || !em.HasComponent<Game.Net.EdgeLane>(lane)
-                    || !em.HasComponent<Game.Net.Curve>(lane)
-                    || !em.HasComponent<Game.Prefabs.PrefabRef>(lane)
-                    || em.HasComponent<Game.Net.MasterLane>(lane)
-                    || em.HasComponent<Game.Net.SecondaryLane>(lane)
-                    || em.HasComponent<Game.Common.Deleted>(lane) || em.HasComponent<Game.Tools.Temp>(lane)) continue;
-                var car = em.GetComponentData<Game.Net.CarLane>(lane);
-                if ((car.m_Flags & (Game.Net.CarLaneFlags.Runway | Game.Net.CarLaneFlags.Forbidden)) != 0) continue;
-                var delta = em.GetComponentData<Game.Net.EdgeLane>(lane).m_EdgeDelta;
-                if (!math.all(math.isfinite(delta)) || math.cmin(delta) > 0.5f || math.cmax(delta) <= 0.5f) continue;
-                var prefab = em.GetComponentData<Game.Prefabs.PrefabRef>(lane).m_Prefab;
-                if (!em.HasComponent<Game.Prefabs.NetLaneData>(prefab)) continue;
-                if (!em.HasComponent<Game.Prefabs.CarLaneData>(prefab)
-                    || (em.GetComponentData<Game.Prefabs.CarLaneData>(prefab).m_RoadTypes
-                        & Game.Net.RoadTypes.Car) == 0) continue;
-                float width = em.GetComponentData<Game.Prefabs.NetLaneData>(prefab).m_Width;
-                if (!TrafficSnapshotMath.Finite(width) || width <= 0) continue;
-                var curve = em.GetComponentData<Game.Net.Curve>(lane).m_Bezier;
-                float laneT = (0.5f - delta.x) / (delta.y - delta.x);
-                float position = math.dot((MathUtils.Position(curve, laneT) - center).xz, normal);
-                if (!TrafficSnapshotMath.Finite(position)) continue;
-                float flow = -1;
-                if (em.HasComponent<Game.Net.LaneFlow>(lane))
+                Entity lane = Entity.Null;
+                JObject record;
+                try
                 {
-                    var data = em.GetComponentData<Game.Net.LaneFlow>(lane);
-                    flow = TrafficSnapshotMath.Flow(Values(data.m_Duration), Values(data.m_Distance), m_Weights);
+                    lane = subLanes[i].m_SubLane;
+                    if (!seen.Add(lane)) continue;
+                    record = ReadLane(em, lane, i, center, normal);
                 }
-                string direction = (car.m_Flags & Game.Net.CarLaneFlags.Twoway) != 0 ? "Both"
-                    : (delta.y > delta.x ? "Forward" : "Backward");
-                result.Add(new JObject {
-                    ["lane_index"] = i, ["lane_type"] = "Vehicle", ["position"] = position,
-                    ["width"] = width, ["relative_speed"] = flow,
-                    ["congestion"] = flow < 0 ? -1 : 1 - flow, ["data_quality"] = flow < 0 ? 1 : 0,
-                    ["direction"] = direction, ["public_only"] = (car.m_Flags & Game.Net.CarLaneFlags.PublicOnly) != 0
-                });
+                catch (Exception error) when (error is ArgumentException
+                    || error is InvalidOperationException && !(error is ObjectDisposedException))
+                {
+                    // 导航与路况读取同一车道，局部缺失不能在第二次读取时中断整个导出。
+                    issues.Warn("TRAFFIC_LANE_UNAVAILABLE", "Segment " + road.Index + ", lane "
+                        + lane.Index + " traffic omitted: " + error.Message);
+                    continue;
+                }
+                if (record == null) continue;
+                result.Add(record);
                 LaneCount++;
-                if (flow >= 0) ValidLaneCount++;
+                if ((float)record["relative_speed"] >= 0) ValidLaneCount++;
             }
             return result;
+        }
+
+        private JObject ReadLane(EntityManager em, Entity lane, int index, float3 center, float2 normal)
+        {
+            if (!em.HasComponent<Game.Net.CarLane>(lane)
+                || !em.HasComponent<Game.Net.EdgeLane>(lane)
+                || !em.HasComponent<Game.Net.Curve>(lane)
+                || !em.HasComponent<Game.Prefabs.PrefabRef>(lane)
+                || em.HasComponent<Game.Net.MasterLane>(lane)
+                || em.HasComponent<Game.Net.SecondaryLane>(lane)
+                || em.HasComponent<Game.Common.Deleted>(lane) || em.HasComponent<Game.Tools.Temp>(lane)) return null;
+            var car = em.GetComponentData<Game.Net.CarLane>(lane);
+            if ((car.m_Flags & (Game.Net.CarLaneFlags.Runway | Game.Net.CarLaneFlags.Forbidden)) != 0) return null;
+            var delta = em.GetComponentData<Game.Net.EdgeLane>(lane).m_EdgeDelta;
+            if (!math.all(math.isfinite(delta)) || math.cmin(delta) > 0.5f || math.cmax(delta) <= 0.5f) return null;
+            var prefab = em.GetComponentData<Game.Prefabs.PrefabRef>(lane).m_Prefab;
+            if (!em.HasComponent<Game.Prefabs.NetLaneData>(prefab)) return null;
+            if (!em.HasComponent<Game.Prefabs.CarLaneData>(prefab)
+                || (em.GetComponentData<Game.Prefabs.CarLaneData>(prefab).m_RoadTypes
+                    & Game.Net.RoadTypes.Car) == 0) return null;
+            float width = em.GetComponentData<Game.Prefabs.NetLaneData>(prefab).m_Width;
+            if (!TrafficSnapshotMath.Finite(width) || width <= 0) return null;
+            var curve = em.GetComponentData<Game.Net.Curve>(lane).m_Bezier;
+            float laneT = (0.5f - delta.x) / (delta.y - delta.x);
+            float position = math.dot((MathUtils.Position(curve, laneT) - center).xz, normal);
+            if (!TrafficSnapshotMath.Finite(position)) return null;
+            float flow = -1;
+            if (em.HasComponent<Game.Net.LaneFlow>(lane))
+            {
+                var data = em.GetComponentData<Game.Net.LaneFlow>(lane);
+                flow = TrafficSnapshotMath.Flow(Values(data.m_Duration), Values(data.m_Distance), m_Weights);
+            }
+            string direction = (car.m_Flags & Game.Net.CarLaneFlags.Twoway) != 0 ? "Both"
+                : (delta.y > delta.x ? "Forward" : "Backward");
+            return new JObject {
+                ["lane_index"] = index, ["lane_type"] = "Vehicle", ["position"] = position,
+                ["width"] = width, ["relative_speed"] = flow,
+                ["speed_limit_mps"] = TrafficSnapshotMath.Finite(car.m_SpeedLimit) && car.m_SpeedLimit > 0
+                    ? new JValue(car.m_SpeedLimit) : JValue.CreateNull(),
+                ["congestion"] = flow < 0 ? -1 : 1 - flow, ["data_quality"] = flow < 0 ? 1 : 0,
+                ["direction"] = direction, ["public_only"] = (car.m_Flags & Game.Net.CarLaneFlags.PublicOnly) != 0
+            };
         }
 
         /// <summary>保留铁路道口事实但不将其计为道路信号灯</summary>

@@ -18,13 +18,13 @@ namespace CSLModernMap.Systems
             GetWindowThreadProcessId(shellWindow, out var shellProcessId);
             if (shellWindow == IntPtr.Zero || shellProcessId == 0)
             {
-                throw new InvalidOperationException("Windows desktop shell is unavailable.");
+                throw new InvalidOperationException("GetShellWindow/GetWindowThreadProcessId: Windows desktop shell is unavailable.");
             }
 
             var parent = OpenProcess(ProcessCreateProcess, false, shellProcessId);
             if (parent == IntPtr.Zero)
             {
-                throw new Win32Exception(Marshal.GetLastWin32Error());
+                throw NativeFailure("OpenProcess(desktop)");
             }
 
             var attributes = IntPtr.Zero;
@@ -36,13 +36,13 @@ namespace CSLModernMap.Systems
                 InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size);
                 if (size == IntPtr.Zero)
                 {
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                    throw NativeFailure("InitializeProcThreadAttributeList(size)");
                 }
 
                 attributes = Marshal.AllocHGlobal(size);
                 if (!InitializeProcThreadAttributeList(attributes, 1, 0, ref size))
                 {
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                    throw NativeFailure("InitializeProcThreadAttributeList");
                 }
 
                 initialized = true;
@@ -52,7 +52,7 @@ namespace CSLModernMap.Systems
                     (IntPtr)ParentProcessAttribute, parentValue, (IntPtr)IntPtr.Size,
                     IntPtr.Zero, IntPtr.Zero))
                 {
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                    throw NativeFailure("UpdateProcThreadAttribute(parent)");
                 }
 
                 var startup = new StartupInfoEx
@@ -65,7 +65,7 @@ namespace CSLModernMap.Systems
                     false, ExtendedStartupInfoPresent, IntPtr.Zero, workingDirectory,
                     ref startup, out var process))
                 {
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                    throw NativeFailure("CreateProcessW");
                 }
 
                 CloseHandle(process.Thread);
@@ -91,6 +91,12 @@ namespace CSLModernMap.Systems
 
                 CloseHandle(parent);
             }
+        }
+
+        private static Win32Exception NativeFailure(string api)
+        {
+            int code = Marshal.GetLastWin32Error();
+            return new Win32Exception(code, api + ": Win32=" + code + "; " + new Win32Exception(code).Message);
         }
 
         [StructLayout(LayoutKind.Sequential)]

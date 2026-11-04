@@ -60,7 +60,8 @@ namespace CSLModernMap.Systems
             HashSet<Entity> exportedNodes,
             HashSet<Entity> exportedNetworks,
             Cs2DerivedNetworkState derived,
-            TrafficExport traffic)
+            TrafficExport traffic,
+            CmmIssueCollector issues)
         {
             m_NetCompositionCache.Clear();
             m_RoadSizeClassCache.Clear();
@@ -182,8 +183,9 @@ namespace CSLModernMap.Systems
                                 EntityManager.HasComponent<Game.Net.SubwayTrack>(entity) ? 1 : 0)));
 
                     exportedNetworks.Add(entity);
+                    var car = kind == "ROAD" ? CarNavigationExport.Capture(EntityManager, entity, issues) : null;
                     if (kind == "ROAD")
-                        traffic.AddRoad(EntityManager, entity, points, width, displayName, name, level);
+                        traffic.AddRoad(EntityManager, entity, points, width, displayName, name, level, issues);
                     if (written > 0)
                     {
                         json.AppendLine(",");
@@ -230,6 +232,11 @@ namespace CSLModernMap.Systems
                     CmmJson.AppendProperty(json, "display_name", displayName);
                     CmmJson.AppendProperty(json, "game_name", gameName);
                     CmmJson.AppendProperty(json, "source_raw", name);
+                    if (car != null)
+                    {
+                        json.Append(", \"car_access\": ").Append(car.AccessJson());
+                        json.Append(", \"car_speed\": ").Append(car.SpeedJson());
+                    }
                     json.Append('}');
                     written++;
                     if (!string.IsNullOrEmpty(displayName))

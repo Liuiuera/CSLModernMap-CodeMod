@@ -100,6 +100,7 @@ namespace CSLModernMap.Systems
         {
             var records = new List<StopRecord>();
 
+            // 外部连接也是跨城线路的停靠点，必须与线路引用一同导出。
             var query = em.CreateEntityQuery(new EntityQueryDesc
             {
                 All = new[]
@@ -433,6 +434,7 @@ namespace CSLModernMap.Systems
                     for (var s = 0; s < segments.Length; s++)
                     {
                         var segment = segments[s].m_Segment;
+                        // Segment.m_Index 对应原始 waypoint，不能使用过滤后的停靠下标。
                         var index = em.GetComponentData<Game.Routes.Segment>(segment).m_Index;
                         sourceSegments.Add(index, segment);
                     }
@@ -579,6 +581,7 @@ namespace CSLModernMap.Systems
             }
             else if (em.HasComponent<Game.Pathfind.PathElement>(segment))
             {
+                // 尚无显示曲线时，读取该路段已有的寻路曲线及有向裁剪区间。
                 var elements = em.GetBuffer<Game.Pathfind.PathElement>(segment);
                 for (var i = 0; i < elements.Length; i++)
                 {

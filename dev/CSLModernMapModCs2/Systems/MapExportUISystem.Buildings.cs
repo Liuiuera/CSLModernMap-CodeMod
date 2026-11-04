@@ -19,7 +19,7 @@ namespace CSLModernMap.Systems
     /// <summary>采集建筑及其用途数据</summary>
     public sealed partial class MapExportUISystem
     {
-        private int AppendBuildings(StringBuilder json)
+        private int AppendBuildings(StringBuilder json, CmmIssueCollector issues)
         {
             m_RoleCounts.Clear();
             m_ServiceCounts.Clear();
@@ -36,7 +36,7 @@ namespace CSLModernMap.Systems
             m_ExportedBuildingPositions.Clear();
 
             var nameSystem = World.GetOrCreateSystemManaged<Game.UI.NameSystem>();
-            var entities = CollectBuildingEntities();
+            var entities = CollectBuildingEntities(issues);
             m_LotSizeCache = new NativeHashMap<Entity, LotSizeEntry>(256, Allocator.Temp);
             m_PrefabNameCache.Clear();
             try
@@ -135,7 +135,7 @@ namespace CSLModernMap.Systems
                 }
 
                 var structures = CollectBuildingStructures(
-                    entities, included, childrenByParent, parentByChild);
+                    entities, included, childrenByParent, parentByChild, issues);
                 foreach (var children in childrenByParent.Values)
                 {
                     children.Sort();
@@ -188,6 +188,7 @@ namespace CSLModernMap.Systems
                         : (hasCustomName ? "custom" : "game"));
                     json.Append('}');
                     AppendBuildingCategory(json, category);
+                    AppendObjectHeight(json, entity, prefab, transform, issues);
                     var zoned = ClassifyByZone(prefab);
                     CmmJson.AppendProperty(json, "growth_kind", zoned.Role != null ? "zoned" : "placed");
                     CmmJson.AppendProperty(json, "growth_use", zoned.Role != null ? zoned.Role.ToLowerInvariant() : "");

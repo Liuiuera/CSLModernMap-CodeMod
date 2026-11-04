@@ -161,9 +161,20 @@ namespace CSLModernMap.Systems
                 throw new FileNotFoundException("Renderer is not installed.", InstalledExecutable);
             }
 
-            var processId = RendererDetachedProcess.Start(
-                InstalledExecutable, "\"" + exportPath + "\"", ExportPaths.ExportDirectory);
-            Mod.log.Info("[renderer] 查看器已独立启动，PID=" + processId);
+            var executable = InstalledExecutable;
+            var workingDirectory = ExportPaths.ExportDirectory;
+            try
+            {
+                var processId = RendererDetachedProcess.Start(
+                    executable, "\"" + exportPath + "\"", workingDirectory);
+                Mod.log.Info("[renderer] 查看器进程已创建，PID=" + processId);
+            }
+            catch (Exception error)
+            {
+                Mod.log.Error("[renderer] " + RendererLaunchDiagnostics.Failure("RendererDetachedProcess.Start", error)
+                    + "; " + RendererLaunchDiagnostics.Context(executable, PayloadVersion, workingDirectory));
+                throw;
+            }
         }
 
         internal static bool TryOpenInFileManager(string directory)

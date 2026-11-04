@@ -24,6 +24,7 @@ namespace CSLModernMap.Systems
             var exportedNodes = new HashSet<Entity>();
             var exportedNetworks = new HashSet<Entity>();
             var derived = new Cs2DerivedNetworkState();
+            var optionalIssues = new CmmIssueCollector();
 
             var nodeJson = new StringBuilder(2 * 1024 * 1024);
             var networkJson = new StringBuilder(12 * 1024 * 1024);
@@ -31,9 +32,9 @@ namespace CSLModernMap.Systems
             var areaJson = new StringBuilder(1024 * 1024);
             var nodeCount = AppendNodes(nodeJson, exportedNodes);
             var networkCount = AppendNetworks(
-                networkJson, exportedNodes, exportedNetworks, derived, traffic);
+                networkJson, exportedNodes, exportedNetworks, derived, traffic, optionalIssues);
             traffic.AddLights(EntityManager, exportedNodes);
-            var buildingCount = AppendBuildings(buildingJson);
+            var buildingCount = AppendBuildings(buildingJson, optionalIssues);
             var areas = AppendAreas(areaJson);
 
             var terrain = TerrainExport.Build(World);
@@ -143,7 +144,7 @@ namespace CSLModernMap.Systems
             json.Append("  \"traffic\": ").Append(traffic.SnapshotJson()).AppendLine(",");
             json.Append("  \"issues\": ").Append(CombineIssueArrays(
                 CombineIssueArrays(CombineIssueArrays(terrain.Issues, transit.Issues), areas.Issues),
-                traffic.IssuesJson()));
+                optionalIssues.ToJson()));
             json.AppendLine(",");
             json.Append("  \"extensions\": {\"map_tile_grid\": ").Append(mapTileGrid);
             json.Append(", \"cs2\": {\"game_version\": ");
@@ -169,13 +170,10 @@ namespace CSLModernMap.Systems
             var firstIssue = terrain.IssueCount > 0 ? terrain.FirstIssue
                 : transit.IssueCount > 0 ? transit.FirstIssue
                 : areas.IssueCount > 0 ? "部分区域缺少完整几何数据"
-                : traffic.IssueCount > 0
-                    ? (traffic.SegmentCount - traffic.ValidSegmentCount)
-                        + " 条道路缺少有效交通统计"
-                    : "";
+                : optionalIssues.First;
             return new ExportResult(path, now, nodeCount, networkCount, buildingCount,
                 transit.StopCount, transit.LineCount,
-                terrain.IssueCount + transit.IssueCount + areas.IssueCount + traffic.IssueCount,
+                terrain.IssueCount + transit.IssueCount + areas.IssueCount + optionalIssues.Count,
                 firstIssue);
         }
     }

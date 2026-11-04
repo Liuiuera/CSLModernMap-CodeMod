@@ -12,7 +12,7 @@ namespace CSLModernMap
         public static readonly ILog log =
             LogManager.GetLogger("CSLModernMap").SetShowsErrorsInUI(false);
 
-        public const string ModVersion = "6.7.2f2";
+        public const string ModVersion = "6.7.3f1";
 
         private static readonly string[] SupportedLocaleIds =
         {
