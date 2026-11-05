@@ -1,0 +1,47 @@
+<?xml version='1.0' encoding='utf-8'?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="DisplayName" xml:space="preserve">
+    <value>CSLModernMap (Exportação do mapa)</value>
+  </data>
+  <data name="Description" xml:space="preserve">
+    <value>Exportação do mapa</value>
+  </data>
+  <data name="Changes660" xml:space="preserve">
+    <value>O mod CSLMapView foi atualizado para v6.5.3!
+
+Novidades:
+Esta versão traz uma grande otimização dos algoritmos e um assistente inicial para ajudar você a escolher um estilo adequado.
+
+A renderização ficou muito mais rápida e usa bem menos memória, com menos falhas;
+novo assistente de primeira execução para personalizar o estilo;
+opção para escolher o tamanho da fonte da interface;
+barra de progresso aprimorada para acompanhar a renderização;
+as configurações agora são salvas automaticamente;
+novas camadas de distritos, uso do solo e zonas funcionais, que podem ser ativadas separadamente por área.
+
+Se encontrar algum problema, continue enviando seu feedback!</value>
+  </data>
+  <data name="Changes640" xml:space="preserve">
+    <value>O mod foi atualizado! Agradecemos o feedback e o apoio dos jogadores!
+
+Novidades:
+• Nova opção para ativar ou desativar nomes aleatórios
+• Rotação do mapa para ajustar livremente o ângulo
+• Novo modo de esquema abstrato do metrô, desativado por padrão; acompanha os trilhos originais do jogo quando desligado e permite redesenhar as rotas quando ligado
+• Correções de vários erros causados por DLLs extras
+
+Se encontrar algum problema, continue enviando seu feedback!</value>
+  </data>
+</root>

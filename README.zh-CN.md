@@ -2,9 +2,10 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-CSLModernMap 的《城市：天际线 II》代码模组，可将当前城市导出为压缩的 `.cmm.gz` 地图文件。
+CSLModernMap 的《城市：天际线》和《城市：天际线 II》代码模组，可将当前城市导出为压缩的 `.cmm.gz` 地图文件。
 
-本仓库包含游戏内代码模组源码和正式版本使用的预编译渲染器载荷。配套查看器与渲染器的源码在 [CSLModernMap](https://github.com/Liuiuera/CSLModernMap) 仓库维护，用于读取导出的城市数据、显示地图，并导出图片和 HTML 网页地图。渲染器只读取导出的 `.cmm.gz` 文件，不直接访问游戏存档。
+本仓库在 `CS1/`、`CS2/` 中分别存放两代游戏内模组源码，不包含查看器源码及预编译载荷。
+正式模组发行包附带配套查看器；查看器只读取导出的地图文件，不直接访问游戏存档。
 
 ## 功能
 
@@ -16,13 +17,19 @@ CSLModernMap 的《城市：天际线 II》代码模组，可将当前城市导�
 
 ## 构建
 
-需要 Windows、《城市：天际线 II》及其官方模组工具链和 .NET SDK 8+。
+CS1 需要 Windows、.NET SDK 10 和本地游戏／模组引用，配置见 [CS1 构建说明](CS1/README.md)。
+CS2 需要 Windows、.NET SDK 8+ 和《城市：天际线 II》官方模组工具链。
 
 ```powershell
-dotnet build dev\CSLModernMapModCs2\CSLModernMapCs2.csproj -c Release
+# 城市：天际线
+dotnet build CS1\CSLModernMap.csproj -c Release
+# 城市：天际线 II
+dotnet build CS2\CSLModernMapCs2.csproj -c Release
 ```
 
-此命令编译并部署到游戏的本地 Mods 目录，构建前请先退出游戏。仓库现有查看器载荷为 6.7.1，与 CodeMod 源码版本独立；查看器更新通过正式模组版本提供。模组不会从网络下载必需文件。
+CS1 构建产物为已验证的 `CS1/bin/private/CSLModernMap.dll`。
+CS2 构建还会部署到本地游戏 Mods 目录，运行前须退出 CS2。
+游戏／模组程序集和查看器载荷需另行提供。模组不会从网络下载必需文件。
 
 ## 许可
 

@@ -1,0 +1,49 @@
+<?xml version='1.0' encoding='utf-8'?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="DisplayName" xml:space="preserve">
+    <value>CSLModernMap (Exportación de mapas)</value>
+  </data>
+  <data name="Description" xml:space="preserve">
+    <value>Exportación de mapas</value>
+  </data>
+  <data name="Changes660" xml:space="preserve">
+    <value>¡El mod CSLMapView se ha actualizado a v6.5.3!
+
+Novedades:
+Esta versión optimiza considerablemente los algoritmos e incorpora un asistente inicial para elegir el estilo adecuado.
+
+Renderizado mucho más rápido y menor uso de memoria, con menos fallos;
+Nuevo asistente de configuración inicial para personalizar el estilo;
+Nueva opción para elegir el tamaño de fuente de la interfaz;
+Barra de progreso mejorada para comprobar el avance del renderizado;
+La configuración se guarda automáticamente, sin necesidad de reajustarla;
+Nuevas capas de distritos, usos del suelo y zonas funcionales, que se pueden activar por separado en cada área.
+
+(English: v6.5.3 - major algorithm optimization: much faster rendering and lower memory usage, fewer crashes; first-run setup wizard; UI font size option; better progress bar; settings auto-save; new district / land-use / zone layers with per-district toggles.)
+
+¡No dudes en seguir enviando comentarios si tienes algún problema!</value>
+  </data>
+  <data name="Changes640" xml:space="preserve">
+    <value>¡El mod se ha actualizado! Gracias a todos por sus comentarios y apoyo.
+
+Novedades:
+• Nuevo interruptor para elegir si se usan nombres aleatorios
+• Se añadió la rotación del mapa para ajustar libremente el ángulo
+• Nuevo interruptor para el esquema abstracto de metro, desactivado de forma predeterminada: las líneas siguen el trazado original del juego y se pueden redibujar al activarlo
+• Se corrigieron varios errores causados por DLL adicionales
+
+¡Sigue enviándonos tus comentarios si tienes algún problema!</value>
+  </data>
+</root>

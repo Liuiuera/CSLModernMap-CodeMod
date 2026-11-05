@@ -1,0 +1,47 @@
+<?xml version='1.0' encoding='utf-8'?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="DisplayName" xml:space="preserve">
+    <value>CSLModernMap (Экспорт карты)</value>
+  </data>
+  <data name="Description" xml:space="preserve">
+    <value>Экспорт карты</value>
+  </data>
+  <data name="Changes660" xml:space="preserve">
+    <value>Мод CSLMapView обновлён до v6.5.3!
+
+Что нового:
+В этой версии значительно оптимизированы алгоритмы и добавлен мастер первого запуска, помогающий выбрать подходящий стиль.
+
+Рендеринг стал намного быстрее, расход памяти заметно снижен, сбоев стало меньше;
+добавлен мастер первоначальной настройки для выбора предпочтительного стиля;
+добавлена настройка размера шрифта интерфейса;
+улучшен индикатор выполнения рендеринга;
+параметры теперь сохраняются автоматически;
+добавлены слои районов, землепользования и функциональных зон с отдельными переключателями по районам.
+
+Если возникнут вопросы, отправляйте отзывы!</value>
+  </data>
+  <data name="Changes640" xml:space="preserve">
+    <value>Мод обновлён! Спасибо игрокам за отзывы и поддержку!
+
+Что нового:
+• Добавлен переключатель случайных названий
+• Добавлен поворот карты для свободной настройки угла
+• Добавлена абстрактная схема метро; по умолчанию выключена, в выключенном состоянии следует исходным путям игры, при включении позволяет перестраивать маршруты
+• Исправлены различные ошибки, вызываемые лишними DLL
+
+Если возникнут проблемы, отправляйте отзывы!</value>
+  </data>
+</root>

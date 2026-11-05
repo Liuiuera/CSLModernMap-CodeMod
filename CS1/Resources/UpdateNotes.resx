@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="Changes672" xml:space="preserve">
+    <value>The multilingual support issue has been fixed. You can change the renderer language in the upper-right corner of its window.
+
+English — v6.7.2
+Improved renderer performance and visual output. Added an advanced metro schematic editor powered by RMP, including support for water features in metro maps. Improved POI icons and text display, added support for exporting native in-game names, and fixed some area and district recognition issues.
+
+中文 — v6.7.2
+优化了渲染器的性能和绘制表现，添加了由 RMP 支持的高级地铁示意图编辑器，同时支持了地铁图的水域功能。优化了 POI 图标和各种文字的显示，现在支持游戏原生名称导出，同时解决了一些区域区划识别的问题。</value>
+  </data>
+  <data name="Changes673" xml:space="preserve">
+    <value>v6.7.3
+1. Fixed an issue where the traffic layer could cause memory exhaustion.
+2. Restored custom colors for building categories.
+3. Added driving and public transport route planning, plus a 3D building mode. Navigation and 3D buildings are available only in HTML maps and the preview viewer.
+4. Improved the metro map editor with station previews and map rotation. Fixed an issue where adaptive layout could fail to start.
+5. Fixed several issues that could prevent maps from rendering.
+
+中文
+v6.7.3
+1. 修复交通图层可能导致内存溢出的问题。
+2. 重新提供建筑分类自定义颜色功能。
+3. 新增导航系统，支持驾车和公共交通路线计算；新增 3D 建筑模式。导航和 3D 建筑模式仅限 HTML 地图与预览器使用。
+4. 优化地铁视图编辑器，新增站点预览和地图旋转功能，修复自适应布局有时无法启动的问题。
+5. 修复若干导致地图无法渲染的问题。</value>
+  </data>
+</root>

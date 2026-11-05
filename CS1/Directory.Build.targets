@@ -1,0 +1,22 @@
+<Project>
+  <!-- 两代 Mod 关闭了 SDK 的程序集信息生成，只补充版本元数据。 -->
+  <Target Name="GenerateModBuildVersion" BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CSLModernMap' Or '$(MSBuildProjectName)' == 'CSLModernMapCs2'">
+    <ItemGroup>
+      <_ModVersionAttribute Include="System.Reflection.AssemblyInformationalVersionAttribute">
+        <_Parameter1>$(InformationalVersion)</_Parameter1>
+      </_ModVersionAttribute>
+      <_ModVersionAttribute Include="System.Reflection.AssemblyVersionAttribute" Condition="'$(MSBuildProjectName)' == 'CSLModernMapCs2'">
+        <_Parameter1>$(AssemblyVersion)</_Parameter1>
+      </_ModVersionAttribute>
+      <_ModVersionAttribute Include="System.Reflection.AssemblyFileVersionAttribute" Condition="'$(MSBuildProjectName)' == 'CSLModernMapCs2'">
+        <_Parameter1>$(FileVersion)</_Parameter1>
+      </_ModVersionAttribute>
+    </ItemGroup>
+    <WriteCodeFragment Language="C#" AssemblyAttributes="@(_ModVersionAttribute)"
+                       OutputFile="$(IntermediateOutputPath)ModBuildVersion.g.cs">
+      <Output TaskParameter="OutputFile" ItemName="Compile" />
+      <Output TaskParameter="OutputFile" ItemName="FileWrites" />
+    </WriteCodeFragment>
+  </Target>
+</Project>

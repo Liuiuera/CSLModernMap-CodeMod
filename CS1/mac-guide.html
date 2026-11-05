@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="{{LANG}}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSLModernMap for macOS</title>
+<meta name="color-scheme" content="light">
+<!--
+  内嵌进 CSLModernMap.dll，渲染器缺失时由 Mod 抽取到输出目录并打开。
+  {{MOD_VERSION}} / {{LANG}} 由 Mod 抽取时替换
+  （ExportActions.MaterializeMacGuide）：前三个保持页内版本与 Mod 版本同步，
+  {{LANG}} 取当前生效语言码（zh-CN / en），驱动下面的双语显隐——中文落中文，
+  其余语言一律落英文。
+  文件名刻意不含文化段（如 .zh-CN.），避免 MSBuild 将其编进卫星程序集。
+  分发形式：单层 .dmg（内含 .app 与 Applications 拖拽快捷方式），安装目标统一为 /Applications。
+  页面为纯静态（无 JS）：本地双击打开时不依赖任何脚本也能完整显示；双语靠 CSS 属性选择器切换。
+
+  放行方式按系统版本分两路，正文只讲主路（macOS 15 起唯一可行）：
+    · macOS 15 (Sequoia) 及以后：系统设置 › 隐私与安全性 › 仍要打开（Apple 已移除右键绕过）
+    · macOS 14 (Sonoma) 及更早：访达里 Control 点按图标 › 打开
+  老系统那条写在卡片下方的小字里，避免正文出现两条并列路径让用户猜。
+-->
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+
+  /* ---------- 双语显隐：默认显示英文 ----------
+     中文落中文，其余语言一律落英文，所以只有 <html lang> 以 zh 开头时才切中文。
+     占位符没被替换（本地直接双击打开）时落到默认分支，显示英文而不是整页空白。 */
+  .zh{display:none}
+  html[lang^="zh"] .zh{display:inline}
+  html[lang^="zh"] .en{display:none}
+
+  body{
+    min-height:100vh;
+    background:#f5f5f7;
+    color:#1d1d1f;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",
+      "PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:28px;
+  }
+
+  .page{width:min(1100px,100%)}
+
+  /* ---------- 页首 ---------- */
+  .hero{text-align:center;margin-bottom:26px}
+
+  .eyebrow{color:#0071e3;font-size:14px;font-weight:700;margin-bottom:8px}
+
+  h1{margin:0;font-size:42px;line-height:1.08;letter-spacing:-1.7px;font-weight:700}
+
+  .subtitle{margin:12px auto 0;max-width:660px;color:#6e6e73;font-size:16px;line-height:1.6}
+
+  .badge-row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:18px}
+
+  .badge{
+    font-size:13px;color:#4a4a4f;background:#fff;
+    border:1px solid rgba(0,0,0,.07);border-radius:999px;padding:4px 13px;
+  }
+
+  /* ---------- 下载入口 ---------- */
+  .downloads{
+    display:grid;grid-template-columns:repeat(2,1fr);gap:12px;
+    max-width:560px;margin:0 auto 30px;
+  }
+
+  .btn{
+    display:block;text-align:center;text-decoration:none;color:#fff;
+    font-size:15px;font-weight:600;line-height:1.35;
+    background:#0071e3;border-radius:14px;padding:13px 16px;
+    transition:filter .2s ease;
+  }
+
+  .btn:hover{filter:brightness(1.07)}
+
+  .btn.b2{border:1px solid rgba(0,0,0,.09);background:#fff;color:#1d1d1f}
+
+  .btn.b2:hover{background:#f0f0f2;filter:none}
+
+  .btn small{display:block;margin-top:3px;font-size:12px;font-weight:500;opacity:.85}
+
+  /* ---------- 两张卡片 ---------- */
+  .grid{
+    display:grid;grid-template-columns:repeat(2,1fr);gap:16px;
+    max-width:860px;margin:0 auto;
+  }
+
+  .card{
+    background:#fff;border:1px solid rgba(0,0,0,.07);border-radius:24px;
+    padding:26px 26px 24px;box-shadow:0 10px 30px rgba(0,0,0,.045);
+  }
+
+  .icon{
+    width:50px;height:50px;border-radius:15px;display:grid;place-items:center;
+    margin-bottom:20px;background:#eef6ff;color:#0071e3;
+  }
+
+  .icon svg{
+    width:25px;height:25px;stroke:currentColor;stroke-width:1.9;fill:none;
+    stroke-linecap:round;stroke-linejoin:round;
+  }
+
+  h2{margin:0 0 9px;font-size:21px;line-height:1.2;letter-spacing:-.45px}
+
+  .card>p{margin:0 0 18px;color:#6e6e73;font-size:14px;line-height:1.65}
+
+  .steps{display:grid;gap:11px}
+
+  .step{
+    display:grid;grid-template-columns:28px 1fr;gap:10px;
+    align-items:start;font-size:14px;line-height:1.5;
+  }
+
+  .num{
+    width:26px;height:26px;border-radius:50%;background:#f0f0f2;color:#1d1d1f;
+    display:grid;place-items:center;font-size:12px;font-weight:700;
+  }
+
+  .step strong{font-weight:650}
+
+  .path{display:inline-block;margin-top:4px;color:#6e6e73;font-size:13px}
+
+  .tip{
+    margin-top:16px;padding:12px 13px;border-radius:13px;
+    background:#f5f5f7;color:#6e6e73;font-size:12.5px;line-height:1.55;
+  }
+
+  .tip strong{color:#1d1d1f}
+
+  /* ---------- 页脚小字 ---------- */
+  .notes{
+    max-width:860px;margin:22px auto 0;padding-top:18px;
+    border-top:1px solid rgba(0,0,0,.08);
+    display:grid;gap:9px;
+  }
+
+  .note{color:#6e6e73;font-size:12.5px;line-height:1.6}
+
+  .note b{color:#3a3a3c;font-weight:650;margin-right:7px}
+
+  .footer{text-align:center;margin-top:20px;color:#a1a1a6;font-size:12px}
+
+  @media(max-width:850px){
+    body{align-items:flex-start;padding:20px}
+    .grid{grid-template-columns:1fr}
+    h1{font-size:34px}
+  }
+
+  @media(max-width:520px){
+    .downloads{grid-template-columns:1fr;max-width:none}
+  }
+</style>
+</head>
+
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="eyebrow"><span class="zh">CSLModernMap · Mac 版</span><span class="en">CSLModernMap · for Mac</span></div>
+      <h1><span class="zh">把你的城市，变成真正的地图。</span><span class="en">Turn your city into a real map.</span></h1>
+      <p class="subtitle">
+        <span class="zh">CSLModernMap 能把《城市：天际线》的城市导出成一张真正的地图，还有公共交通视图、地铁示意图和多种配色。Mac 上第一次使用，装好、放行一次就可以。</span>
+        <span class="en">CSLModernMap exports your Cities: Skylines city as a real map, with public transport views, a metro diagram and several color schemes. On Mac you just install it once and allow it once.</span>
+      </p>
+      <div class="badge-row">
+        <span class="badge">Mod v{{MOD_VERSION}}</span>
+        <span class="badge"><span class="zh">支持 Intel 与 Apple 芯片</span><span class="en">Intel and Apple silicon</span></span>
+      </div>
+    </section>
+
+    <section class="downloads">
+      <a class="btn" href="https://gitee.com/liuiuiera/CSLModernMap-releases/releases"
+         target="_blank" rel="noopener"><span class="zh">下载 .dmg</span><span class="en">Download .dmg</span><small><span class="zh">国内 · Gitee · 历史 macOS 版本</span><span class="en">China · Gitee · Previous macOS releases</span></small></a>
+      <a class="btn b2" href="https://github.com/Liuiuera/CSLModernMap-releases/releases"
+         target="_blank" rel="noopener"><span class="zh">下载 .dmg</span><span class="en">Download .dmg</span><small><span class="zh">备用 · GitHub · 历史 macOS 版本</span><span class="en">Mirror · GitHub · Previous macOS releases</span></small></a>
+    </section>
+
+    <section class="grid">
+
+      <article class="card">
+        <div class="icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 3v12"/>
+            <path d="M8 11l4 4 4-4"/>
+            <path d="M5 19h14"/>
+          </svg>
+        </div>
+        <h2><span class="zh">1. 装进“应用程序”</span><span class="en">1. Install it in Applications</span></h2>
+        <p><span class="zh">和装其他 Mac 应用一样，把渲染器拖进“应用程序”文件夹就好。</span><span class="en">Just like any other Mac app: drag the renderer into your Applications folder.</span></p>
+
+        <div class="steps">
+          <div class="step">
+            <div class="num">1</div>
+            <div><span class="zh">双击下载好的 <strong>.dmg</strong> 文件，桌面上会弹出一个小窗口。</span><span class="en">Double-click the downloaded <strong>.dmg</strong> file — a small window opens on your desktop.</span></div>
+          </div>
+          <div class="step">
+            <div class="num">2</div>
+            <div>
+              <span class="zh">把窗口里的 <strong>CSLModernMap Renderer</strong> 拖到旁边的“应用程序”上，它就装好了。</span>
+              <span class="en">Drag <strong>CSLModernMap Renderer</strong> onto the Applications shortcut beside it, and it is installed.</span>
+              <div class="path"><span class="zh">Finder › 应用程序</span><span class="en">Finder › Applications</span></div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="num">3</div>
+            <div><span class="zh">在“应用程序”里找到它，双击一次，试着打开。</span><span class="en">Find it in Applications and double-click once to try opening it.</span></div>
+          </div>
+        </div>
+
+        <div class="tip">
+          <span class="zh">请在“应用程序”里打开它。直接在下载文件夹或 .dmg 窗口里运行，重启电脑后可能就打不开了。</span>
+          <span class="en">Always open it from Applications. Running it straight from your Downloads folder or the .dmg window may stop working after a restart.</span>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 3l7 3v5c0 4.7-2.9 8.2-7 10-4.1-1.8-7-5.3-7-10V6l7-3z"/>
+            <path d="M9.2 12l1.8 1.8 3.8-4"/>
+          </svg>
+        </div>
+        <h2><span class="zh">2. 第一次打开，放行一次</span><span class="en">2. Allow it once</span></h2>
+        <p><span class="zh">这个应用没有 Apple 的签名认证，所以第一次双击会被系统拦下来。放行一次，以后就正常了。</span><span class="en">This app is not signed by Apple, so macOS blocks the first launch. Allow it once and it opens normally from then on.</span></p>
+
+        <div class="steps">
+          <div class="step">
+            <div class="num">1</div>
+            <div>
+              <span class="zh">在“应用程序”里双击它，会弹出一个提示说无法验证开发者。<strong>先把它关掉</strong>，这是正常的。</span>
+              <span class="en">Double-click it in Applications — macOS warns that the developer cannot be verified. <strong>Dismiss that dialog</strong>; it is expected.</span>
+            </div>
+          </div>
+          <div class="step">
+            <div class="num">2</div>
+            <div>
+              <span class="zh">打开“系统设置”，进入“隐私与安全性”，往下滚到“安全性”一栏。</span>
+              <span class="en">Open System Settings, go to Privacy &amp; Security, and scroll down to the Security section.</span>
+              <div class="path"><span class="zh">系统设置 › 隐私与安全性</span><span class="en">System Settings › Privacy &amp; Security</span></div>
+            </div>
+          </div>
+          <div class="step">
+            <div class="num">3</div>
+            <div><span class="zh">找到关于 <strong>CSLModernMap Renderer</strong> 的提示，点旁边的 <strong>“仍要打开”</strong>。</span><span class="en">Find the message about <strong>CSLModernMap Renderer</strong> and click <strong>Open Anyway</strong> next to it.</span></div>
+          </div>
+          <div class="step">
+            <div class="num">4</div>
+            <div><span class="zh">系统会再问你一次，点“打开”，然后输入开机密码或用 Touch ID 确认。</span><span class="en">macOS asks once more — click Open, then confirm with your login password or Touch ID.</span></div>
+          </div>
+        </div>
+
+        <div class="tip">
+          <span class="zh">如果你的 Mac 是 macOS 14 或更早的版本，可以走更快的路：在“访达”里按住 <strong>Control</strong> 点按应用图标，选“打开”，再点一次“打开”，不用进系统设置。</span>
+          <span class="en">On macOS 14 or earlier there is a faster route: in Finder, hold <strong>Control</strong> and click the app icon, choose Open, then click Open again — no need to visit System Settings.</span>
+        </div>
+      </article>
+
+    </section>
+
+    <section class="notes">
+      <div class="note"><b><span class="zh">关于那句警告</span><span class="en">About that warning</span></b><span class="zh">“未打开”“无法验证开发者”是 macOS 对没有 Apple 签名认证的应用的常规提示，不代表它有病毒或有问题。</span><span class="en">“Not opened” and “cannot be verified” are macOS's standard prompts for apps without Apple's signature — they do not mean the app is malicious or broken.</span></div>
+      <div class="note"><b><span class="zh">不用降低系统安全性</span><span class="en">No need to weaken security</span></b><span class="zh">上面做的只是给这一个应用放行，不需要关闭 macOS 的安全保护，也不需要开启“任何来源”。</span><span class="en">You are only allowing this one app — no need to disable macOS security or to enable “Anywhere”.</span></div>
+      <div class="note"><b><span class="zh">如果提示“将损坏你的电脑”</span><span class="en">If macOS says “will damage your computer”</span></b><span class="zh">出现这句时请不要强行打开，删掉它，从上面的官方渠道重新下载一次。</span><span class="en">Do not force it open. Delete the file and download it again from the official links above.</span></div>
+      <div class="note"><b><span class="zh">放行之后</span><span class="en">After that</span></b><span class="zh">以后直接双击就能打开，不会再拦。回到游戏点一次“导出并打开 Mac 渲染器”，就能看到你的地图了。</span><span class="en">From then on it opens with a normal double-click. Back in the game, click “Export &amp; Open Mac Renderer” once and your map appears.</span></div>
+    </section>
+
+    <div class="footer"><span class="zh">CSLModernMap · macOS 使用指南</span><span class="en">CSLModernMap · macOS Guide</span></div>
+  </main>
+</body>
+</html>

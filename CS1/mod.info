@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cities: Skylines Mod 元数据文件（mod.info）。
+  创意工坊上传时会读取此文件声明依赖关系。
+
+  本Mod对 TM:PE 使用 <softDependency>（软依赖）：
+    - 玩家未安装 TM:PE 时，本Mod仍可加载，地图导出功能可用；
+      交通快照导出按钮保持可见，点击时会提示 TM:PE 未就绪，不会报错崩溃。
+    - 玩家安装了 TM:PE (Workshop ID 1637663252) 时，交通快照功能激活。
+
+  TM:PE 已知工作坊ID：
+    1637663252 = TM:PE v11 STABLE（推荐，覆盖 98% 用户）
+    2489276785 = TM:PE v11 TEST（测试版，可选）
+    583429760 = 旧版 TM:PE v10（已废弃，不需要兼容）
+-->
+<ModInfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>CSLModernMap（地图导出）v6.7.3f1</Name>
+  <DisplayName>CSLModernMap（地图导出）v6.7.3f1</DisplayName>
+  <Version>6.7.3f1</Version>
+  <Author>少糖烧仙草</Author>
+  <Description>导出城市地图并一键渲染现代风格地图图片（Export your city map and render modern-style map images）. v6.7.3f1</Description>
+
+  <!-- 软依赖 TM:PE v11 STABLE -->
+  <softDependency>1637663252</softDependency>
+  <!-- 可选：TM:PE TEST 用户 -->
+  <softDependency>2489276785</softDependency>
+
+  <!-- 本Mod使用 Harmony 2.x（若需要其他补丁功能；当前可选） -->
+  <!-- <softDependency>2040656402</softDependency> -->  <!-- Harmony 2.x -->
+</ModInfo>

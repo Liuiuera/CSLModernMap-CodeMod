@@ -1,13 +1,17 @@
 .vs/
 *.user
-
-dev/CSLModernMapModCs2/bin/
-dev/CSLModernMapModCs2/obj/
-dev/CSLModernMapModCs2/Library/
-dev/CSLModernMapModCs2/UI/node_modules/
-dev/CSLModernMapModCs2/UI/build/
-
+**/bin/
+**/obj/
+**/Library/
+**/node_modules/
+CS1/Libs/
+CS2/UI/build/
+CS2/Properties/PublishConfiguration.xml
 __pycache__/
 *.pyc
 *.log
 
+# Viewer payloads are supplied by official mod releases.
+*.cslmr
+*.cslmr.sha256
+renderer-version.txt

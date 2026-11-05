@@ -1,0 +1,49 @@
+<?xml version='1.0' encoding='utf-8'?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="DisplayName" xml:space="preserve">
+    <value>CSLModernMap (Kartenexport)</value>
+  </data>
+  <data name="Description" xml:space="preserve">
+    <value>Kartenexport</value>
+  </data>
+  <data name="Changes660" xml:space="preserve">
+    <value>Das CSLMapView-Mod wurde auf v6.5.3 aktualisiert!
+
+Änderungen:
+Dieser Release optimiert die Programmalgorithmen grundlegend und ergänzt einen Einrichtungsassistenten beim ersten Start, damit du deinen bevorzugten Stil auswählen kannst.
+
+Deutlich schnelleres Rendering, wesentlich geringerer Speicherbedarf und weniger Abstürze;
+Assistent beim ersten Start zur individuellen Gestaltung;
+Option zur Auswahl der Schriftgröße hinzugefügt;
+Fortschrittsanzeige verbessert, damit der Renderfortschritt leichter zu erkennen ist;
+Einstellungen werden jetzt automatisch gespeichert und müssen nicht jedes Mal neu angepasst werden;
+Neue Ebenen für Bezirke, Landnutzung und Funktionsbereiche mit einzeln schaltbaren Gebieten.
+
+(Deutsch: v6.5.3 bringt grundlegende Algorithmusverbesserungen, schnelleres Rendering, geringere Speichernutzung und weniger Abstürze, einen Einrichtungsassistenten, eine Schriftgrößenauswahl, eine bessere Fortschrittsanzeige, automatische Speicherung und neue Ebenen für Bezirke, Landnutzung und Funktionsbereiche.)
+
+Bei Problemen kannst du uns gern weiter Feedback geben!</value>
+  </data>
+  <data name="Changes640" xml:space="preserve">
+    <value>Das Mod wurde aktualisiert! Vielen Dank für Feedback und Unterstützung!
+
+Änderungen:
+• Neuer Schalter: Zufallsnamen können ein- oder ausgeschaltet werden
+• Kartenrotation hinzugefügt, um den Winkel frei einzustellen
+• Neuer Schalter: abstrakter Metroplan, standardmäßig aus; Linien folgen zunächst den originalen Gleisen, beim Einschalten kann der Verlauf neu gezeichnet werden
+• Verschiedene Fehler durch überflüssige DLL-Dateien behoben
+
+Bei Problemen freuen wir uns weiterhin über Rückmeldungen!</value>
+  </data>
+</root>

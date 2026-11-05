@@ -1,0 +1,49 @@
+<?xml version='1.0' encoding='utf-8'?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="DisplayName" xml:space="preserve">
+    <value>CSLModernMap(지도 내보내기)</value>
+  </data>
+  <data name="Description" xml:space="preserve">
+    <value>지도 내보내기</value>
+  </data>
+  <data name="Changes660" xml:space="preserve">
+    <value>CSLMapView 모드가 v6.5.3으로 업데이트되었습니다!
+
+업데이트 내용:
+이번 버전에서는 알고리즘을 크게 최적화하고, 처음 실행할 때 원하는 스타일을 고르는 안내 기능을 추가했습니다.
+
+렌더링 속도가 크게 향상되고 메모리 사용량과 충돌이 줄었습니다.
+최초 실행 안내 기능을 추가했습니다.
+글꼴 크기 선택 기능을 추가했습니다.
+진행률 표시를 개선했습니다.
+설정이 자동 저장됩니다.
+행정구역, 토지 이용 및 용도지역 레이어를 추가하고 구역별로 켜고 끌 수 있습니다.
+
+(English: v6.5.3 - major algorithm optimization: much faster rendering and lower memory usage, fewer crashes; first-run setup wizard; UI font size option; better progress bar; settings auto-save; new district / land-use / zone layers with per-district toggles.)
+
+문제가 있으면 계속 알려 주세요!</value>
+  </data>
+  <data name="Changes640" xml:space="preserve">
+    <value>모드 업데이트가 완료되었습니다! 플레이어 여러분의 의견과 지원에 감사드립니다!
+
+업데이트 내용:
+• 임의 이름 사용 여부를 선택하는 스위치 추가
+• 지도를 자유롭게 회전하는 기능 추가
+• 추상 지하철 지도 스위치 추가(기본적으로 꺼짐). 지하철 노선은 게임의 원래 선로를 따르며 켜면 경로를 다시 그릴 수 있습니다
+• 불필요한 DLL로 발생하던 여러 오류 수정
+
+문제가 있으면 계속 알려 주세요!</value>
+  </data>
+</root>

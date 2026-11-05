@@ -1,0 +1,49 @@
+<?xml version='1.0' encoding='utf-8'?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="DisplayName" xml:space="preserve">
+    <value>CSLModernMap (eksport mapy)</value>
+  </data>
+  <data name="Description" xml:space="preserve">
+    <value>Eksport mapy</value>
+  </data>
+  <data name="Changes660" xml:space="preserve">
+    <value>Mod CSLMapView zaktualizowano do wersji v6.5.3!
+
+Nowości:
+W tej wersji znacznie zoptymalizowano algorytmy i dodano kreator pierwszego uruchomienia, który pomaga wybrać odpowiedni styl.
+
+Renderowanie jest znacznie szybsze, zużycie pamięci wyraźnie mniejsze, a awarie rzadsze;
+Dodano kreator pierwszego uruchomienia, który ułatwia wybór preferowanego stylu;
+Dodano możliwość wyboru rozmiaru czcionki;
+Ulepszono pasek postępu, aby ułatwić śledzenie renderowania;
+Ustawienia są teraz zapisywane automatycznie i nie trzeba ich konfigurować od nowa;
+Dodano warstwy dzielnic administracyjnych, typów zagospodarowania terenu i stref funkcjonalnych, które można włączać osobno dla każdego obszaru.
+
+(Automatyczne tłumaczenie)
+
+W razie problemów napisz do nas ponownie!</value>
+  </data>
+  <data name="Changes640" xml:space="preserve">
+    <value>Mod został zaktualizowany! Dziękujemy za opinie i wsparcie graczy!
+
+Zmiany:
+• Nowy przełącznik: wybór, czy używać losowych nazw
+• Dodano obrót mapy, aby swobodnie zmieniać jej kąt
+• Nowy przełącznik: abstrakcyjny schemat metra (domyślnie wyłączony); linie metra dopasowują się do oryginalnych torów w grze, a po włączeniu można przerysować ich przebieg
+• Naprawiono różne błędy spowodowane przez zbędne pliki DLL
+
+W razie problemów nadal możesz przesyłać opinie!</value>
+  </data>
+</root>

@@ -1,0 +1,3 @@
+bin/
+obj/
+!Newtonsoft.Json-13.0.4.zip

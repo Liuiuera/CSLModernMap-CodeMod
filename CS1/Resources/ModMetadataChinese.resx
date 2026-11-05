@@ -1,0 +1,49 @@
+<?xml version='1.0' encoding='utf-8'?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="DisplayName" xml:space="preserve">
+    <value>CSLModernMap（地图导出）</value>
+  </data>
+  <data name="Description" xml:space="preserve">
+    <value>地图导出</value>
+  </data>
+  <data name="Changes660" xml:space="preserve">
+    <value>CSLMapView模组已更新至 v6.5.3！
+
+更新内容：
+此版本对程序算法完成了重大优化，同时添加了首次进入时的向导，便于选择适合自己的风格。
+
+大幅提升了渲染速度，且显著降低内存占用，减少了崩溃问题；
+新增了首次运行向导，便于定制自己喜欢的风格；
+新增了字号选择功能；
+优化了进度条的显示，便于确认渲染进度；
+设置现在可以自动保存了，无需每次重新调整；
+新增行政区划、用地类型、功能区图层，可按区域单独开关。
+
+（English: v6.5.3 - major algorithm optimization: much faster rendering and lower memory usage, fewer crashes; first-run setup wizard; UI font size option; better progress bar; settings auto-save; new district / land-use / zone layers with per-district toggles.）
+
+如有问题欢迎继续反馈！</value>
+  </data>
+  <data name="Changes640" xml:space="preserve">
+    <value>模组已完成更新！感谢各位玩家的反馈与支持！
+
+更新内容：
+• 新增开关：可自主选择是否启用随机名称
+• 增加地图旋转功能，自由调整地图角度
+• 新增开关：抽象地铁图，默认关闭，地铁线路贴合游戏原始轨道走向，开启可以实现路线重绘
+• 修复多余DLL引发的各类报错问题
+
+如有问题欢迎继续反馈！</value>
+  </data>
+</root>

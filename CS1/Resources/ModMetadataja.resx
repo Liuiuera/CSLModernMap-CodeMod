@@ -1,0 +1,49 @@
+<?xml version='1.0' encoding='utf-8'?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="DisplayName" xml:space="preserve">
+    <value>CSLModernMap（地図エクスポート）</value>
+  </data>
+  <data name="Description" xml:space="preserve">
+    <value>マップのエクスポート</value>
+  </data>
+  <data name="Changes660" xml:space="preserve">
+    <value>CSLMapView mod が v6.5.3 に更新されました！
+
+更新内容：
+このバージョンではアルゴリズムを大幅に最適化し、初回起動時に好みのスタイルを選べるウィザードを追加しました。
+
+描画速度が大幅に向上し、メモリ使用量とクラッシュも減りました。
+初回起動ウィザードを追加しました。
+文字サイズを選べるようになりました。
+進行状況を確認しやすくしました。
+設定が自動保存されます。
+地区、土地利用、用途地域のレイヤーを追加し、地区ごとに表示を切り替えられます。
+
+(English: v6.5.3 - major algorithm optimization: much faster rendering and lower memory usage, fewer crashes; first-run setup wizard; UI font size option; better progress bar; settings auto-save; new district / land-use / zone layers with per-district toggles.)
+
+問題があれば引き続きお知らせください！</value>
+  </data>
+  <data name="Changes640" xml:space="preserve">
+    <value>Mod の更新が完了しました！プレイヤーの皆さんのご意見とご支援に感謝します！
+
+更新内容：
+• ランダム名を有効にするか選べるスイッチを追加
+• 地図の回転機能を追加し、角度を自由に調整可能に
+• 抽象地下鉄マップのスイッチを追加（既定ではオフ）。地下鉄路線はゲーム本来の軌道に沿い、オンにすると路線を再描画できます
+• 余分な DLL による各種エラーを修正
+
+問題があれば引き続きお知らせください！</value>
+  </data>
+</root>

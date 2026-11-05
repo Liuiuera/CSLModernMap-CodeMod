@@ -1,0 +1,49 @@
+<?xml version='1.0' encoding='utf-8'?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="DisplayName" xml:space="preserve">
+    <value>CSLModernMap (Map Export)</value>
+  </data>
+  <data name="Description" xml:space="preserve">
+    <value>Map Export</value>
+  </data>
+  <data name="Changes660" xml:space="preserve">
+    <value>The CSLMapView module has been updated to v6.5.3!
+
+What’s new:
+This version significantly optimizes the algorithms and adds a first-run guide to help you choose a style.
+
+Rendering is much faster, memory use is significantly lower, and crashes are reduced;
+A first-run guide helps you choose a style;
+Added a font size option;
+Improved the progress bar so you can track rendering;
+Settings are now saved automatically;
+Added district, land-use, and zone layers, with individual toggles for each district.
+
+(English: v6.5.3 - major algorithm optimization: much faster rendering and lower memory usage, fewer crashes; first-run setup wizard; UI font size option; better progress bar; settings auto-save; new district / land-use / zone layers with per-district toggles.)
+
+Please keep sharing your feedback!</value>
+  </data>
+  <data name="Changes640" xml:space="preserve">
+    <value>The module update is complete! Thank you all for your feedback and support!
+
+What’s new:
+• Added a toggle to enable or disable random names
+• Added map rotation so you can adjust the map angle
+• Added a toggle for abstract metro diagrams, off by default. Metro lines follow the game’s original track layout; turn it on to redraw routes
+• Fixed various errors caused by redundant DLLs
+
+Please keep sharing your feedback!</value>
+  </data>
+</root>

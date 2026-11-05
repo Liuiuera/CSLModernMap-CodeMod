@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net35</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>Newtonsoft.Json</AssemblyName>
+    <AssemblyVersion>13.0.0.0</AssemblyVersion>
+    <FileVersion>13.0.4.0</FileVersion>
+    <Version>13.0.4</Version>
+    <InformationalVersion>13.0.4+cs1-net35</InformationalVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- Upstream net35, excluding unused DataContract, ADO.NET, EF and LINQ-to-XML support. -->
+    <DefineConstants>NET35;HAVE_APP_DOMAIN;HAVE_BINARY_FORMATTER;HAVE_BINARY_SERIALIZATION;HAVE_BINARY_EXCEPTION_SERIALIZATION;HAVE_CAS;HAVE_CHAR_TO_STRING_WITH_CULTURE;HAVE_CHAR_TO_LOWER_WITH_CULTURE;HAVE_COM_ATTRIBUTES;HAVE_COMPONENT_MODEL;HAVE_DATE_TIME_OFFSET;HAVE_DB_NULL_TYPE_CODE;HAVE_EMPTY_TYPES;HAVE_FAST_REVERSE;HAVE_FULL_REFLECTION;HAVE_HASH_SET;HAVE_ICLONEABLE;HAVE_ICONVERTIBLE;HAVE_INOTIFY_PROPERTY_CHANGING;HAVE_LINQ;HAVE_MEMORY_BARRIER;HAVE_NON_SERIALIZED_ATTRIBUTE;HAVE_REFLECTION_EMIT;HAVE_STREAM_READER_WRITER_CLOSE;HAVE_TIME_ZONE_INFO;HAVE_TRACE_WRITER;HAVE_TYPE_DESCRIPTOR;HAVE_UNICODE_SURROGATE_DETECTION;HAVE_XML_DOCUMENT;HAVE_XML_DOCUMENT_TYPE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+  </ItemGroup>
+  <Target Name="PrepareJsonNetSources" BeforeTargets="CoreCompile">
+    <VerifyFileHash File="$(MSBuildProjectDirectory)/Newtonsoft.Json-13.0.4.zip" Hash="7CDDBEC9C4F2E9DC6D87B31EE3A68B9602A0C299E74BC4BEAE764263762DDED5" Algorithm="SHA256" />
+    <!-- Restore upstream files if an extracted source was edited locally. -->
+    <Unzip SourceFiles="$(MSBuildProjectDirectory)/Newtonsoft.Json-13.0.4.zip" DestinationFolder="$(IntermediateOutputPath)upstream" SkipUnchangedFiles="false" />
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)upstream/Newtonsoft.Json-13.0.4/Src/Newtonsoft.Json/**/*.cs" />
+    </ItemGroup>
+  </Target>
+</Project>

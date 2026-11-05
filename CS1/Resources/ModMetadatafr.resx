@@ -1,0 +1,49 @@
+<?xml version='1.0' encoding='utf-8'?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms</value>
+  </resheader>
+  <data name="DisplayName" xml:space="preserve">
+    <value>CSLModernMap (Exportation cartographique)</value>
+  </data>
+  <data name="Description" xml:space="preserve">
+    <value>Exportation de carte</value>
+  </data>
+  <data name="Changes660" xml:space="preserve">
+    <value>Le mod CSLMapView a été mis à jour vers la version 6.5.3 !
+
+Nouveautés :
+Cette version apporte une optimisation majeure des algorithmes et un assistant de première utilisation pour choisir un style adapté.
+
+• Rendu nettement plus rapide, consommation mémoire réduite et moins de plantages
+• Assistant de configuration au premier lancement
+• Réglage de la taille de police de l’interface
+• Barre de progression améliorée
+• Enregistrement automatique des paramètres
+• Nouvelles couches Districts, Occupation du sol et Zones, activables séparément par zone
+
+(English: v6.5.3 - major algorithm optimization: much faster rendering and lower memory usage, fewer crashes; first-run setup wizard; UI font size option; better progress bar; settings auto-save; new district / land-use / zone layers with per-district toggles.)
+
+N’hésitez pas à nous faire part de tout problème !</value>
+  </data>
+  <data name="Changes640" xml:space="preserve">
+    <value>Le mod a été mis à jour ! Merci à tous les joueurs pour vos commentaires et votre soutien !
+
+Nouveautés :
+• Nouveau réglage pour activer ou désactiver les noms aléatoires
+• Rotation de la carte pour ajuster librement son angle
+• Nouvelle option de schéma de métro abstrait, désactivée par défaut ; les lignes suivent le tracé ferroviaire du jeu et peuvent être redessinées lorsque l’option est activée
+• Correction de diverses erreurs causées par des DLL superflues
+
+N’hésitez pas à continuer à nous faire part des problèmes rencontrés !</value>
+  </data>
+</root>

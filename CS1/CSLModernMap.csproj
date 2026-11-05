@@ -1,0 +1,105 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>CSLModernMap</AssemblyName>
+    <RootNamespace>CSLModernMap</RootNamespace>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <TargetFramework>net35</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>7.3</LangVersion>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <CheckForOverflowUnderflow>False</CheckForOverflowUnderflow>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <Deterministic>false</Deterministic>
+    <GenerateResourceMSBuildRuntime Condition="'$(MSBuildRuntimeType)' == 'Core'">CurrentRuntime</GenerateResourceMSBuildRuntime>
+    <ExecuteAsTool Condition="'$(MSBuildRuntimeType)' == 'Core'">false</ExecuteAsTool>
+    <OutputPath>bin\</OutputPath>
+    <!-- AlgernonCommons 子目录自带 .csproj/.cs，排除出默认通配，避免与下方 projitems 导入重复编译 -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);AlgernonCommons\**;third_party\**;tools\**</DefaultItemExcludes>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- 嵌入式资源：macOS 渲染器安装指南，渲染器缺失时由 Mod 抽取到输出目录并用浏览器打开 -->
+    <EmbeddedResource Include="mac-guide.html" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 本机未安装 .NET Framework 3.5 目标包，用官方引用程序集包代替（仅编译期） -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net35" Version="1.0.3" PrivateAssets="All" GeneratePathProperty="true" />
+    <ProjectReference Include="third_party/jsonnet/JsonNet.CS1.csproj" />
+    <PackageReference Include="ILRepack" Version="2.0.48" PrivateAssets="All" ExcludeAssets="all" GeneratePathProperty="true" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="ICities">
+      <HintPath>$(CS1ManagedPath)\ICities.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ColossalManaged">
+      <HintPath>$(CS1ManagedPath)\ColossalManaged.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(CS1ManagedPath)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(CS1ManagedPath)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- 游戏自带 ZIP 实现，仅作编译期引用；不得再次随 Mod 分发。 -->
+    <Reference Include="ICSharpCode.SharpZipLib">
+      <HintPath>$(CS1ManagedPath)\ICSharpCode.SharpZipLib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- TM:PE v11 STABLE 及其依赖仅作编译引用，不随本模组分发。 -->
+    <Reference Include="TrafficManager">
+      <HintPath>$(TmpePath)\TrafficManager.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TMPE.API">
+      <HintPath>$(TmpePath)\TMPE.API.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="CSUtil.Commons">
+      <HintPath>$(TmpePath)\CSUtil.Commons.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="CitiesHarmony.API">
+      <HintPath>$(TmpePath)\CitiesHarmony.API.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnifiedUILib">
+      <HintPath>$(TmpePath)\UnifiedUILib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="CSUtil.CameraControl">
+      <HintPath>$(TmpePath)\CSUtil.CameraControl.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Procedural Objects 软依赖（workshop id 1094334744）。
+         PO 类全部为 public，直接强引用。导出时调用处包 try-catch：
+         未安装 PO 时 ExportProceduralObjects 方法 JIT 抛 TypeLoadException，
+         被调用方 catch 后跳过 PO 节点，不影响其他图层导出。 -->
+    <Reference Include="ProceduralObjects">
+      <HintPath>$(ProceduralObjectsPath)\ProceduralObjects.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+  <Target Name="CheckGameReferencePaths" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(CS1ManagedPath)' == ''" Text="Set CS1ManagedPath to Cities_Skylines/Cities_Data/Managed." />
+    <Error Condition="'$(TmpePath)' == ''" Text="Set TmpePath to the TM:PE v11 STABLE directory." />
+    <Error Condition="'$(ProceduralObjectsPath)' == ''" Text="Set ProceduralObjectsPath to the Procedural Objects directory (compile-time reference)." />
+  </Target>
+  <!-- AlgernonCommons（MIT）以源码共享项目方式编入主 DLL，同 FPSCamera-Continued 的做法；
+       选用不带 Patching/Harmony 的 Shared 变体；内置源码快照固定 commit 31972773 -->
+  <Import Project="AlgernonCommons\AlgernonCommonsShared.projitems" Label="Shared" />
+  <!-- Only the explicitly listed Json.NET net35 assembly is merged. Game/mod references stay external. -->
+  <Target Name="PrivatizeJsonNet" AfterTargets="Build">
+    <PropertyGroup>
+      <PrivateModDir>$(MSBuildProjectDirectory)\bin\private</PrivateModDir>
+      <JsonNet35>$(TargetDir)Newtonsoft.Json.dll</JsonNet35>
+    </PropertyGroup>
+    <MakeDir Directories="$(PrivateModDir)" />
+    <Delete Files="$(PrivateModDir)\CSLModernMap.verified.json" />
+    <Exec Command="dotnet exec --runtimeconfig &quot;$(MSBuildProjectDirectory)\tools\cs1_assembly_check\ILRepack.runtimeconfig.json&quot; &quot;$(PkgILRepack)\tools\ILRepack.exe&quot; /internalize /ndebug /lib:&quot;$(CS1ManagedPath)&quot; /lib:&quot;$(TmpePath)&quot; /lib:&quot;$(ProceduralObjectsPath)&quot; /out:&quot;$(PrivateModDir)\CSLModernMap.dll&quot; /lib:&quot;$(PkgMicrosoft_NETFramework_ReferenceAssemblies_net35)\build\.NETFramework\v3.5&quot; &quot;$(TargetPath)&quot; &quot;$(JsonNet35)&quot;" />
+    <Exec Command="dotnet run --project &quot;$(MSBuildProjectDirectory)\tools\cs1_assembly_check&quot; -c Release -- &quot;$(PrivateModDir)\CSLModernMap.dll&quot; &quot;$(TargetPath)&quot; &quot;$(JsonNet35)&quot;" />
+  </Target>
+</Project>

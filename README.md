@@ -2,9 +2,11 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-The Cities: Skylines II code mod for CSLModernMap. It exports the current city as a compressed `.cmm.gz` map file.
+The Cities: Skylines and Cities: Skylines II code mods for CSLModernMap. Both export the current city as a compressed `.cmm.gz` map file.
 
-This repository includes the Code Mod source and the prebuilt renderer payload used in official releases. The companion viewer and renderer source is maintained in [CSLModernMap](https://github.com/Liuiuera/CSLModernMap). It reads the exported city data, displays maps and exports images and HTML web maps. The renderer only reads exported `.cmm.gz` files and does not directly access game save files.
+This repository contains the in-game Code Mod source in `CS1/` and `CS2/`.
+Renderer source and prebuilt payloads are not included. Official mod releases
+include the companion viewer, which reads exported maps without accessing game saves.
 
 ## Features
 
@@ -16,13 +18,21 @@ This repository includes the Code Mod source and the prebuilt renderer payload u
 
 ## Build
 
-Requires Windows, Cities: Skylines II with its official modding toolchain, and .NET SDK 8+.
+CS1 requires Windows, .NET SDK 10 and local game/mod references;
+see [CS1 build setup](CS1/README.md). CS2 requires Windows, .NET SDK 8+
+and the official Cities: Skylines II modding toolchain.
 
 ```powershell
-dotnet build dev\CSLModernMapModCs2\CSLModernMapCs2.csproj -c Release
+# Cities: Skylines
+dotnet build CS1\CSLModernMap.csproj -c Release
+# Cities: Skylines II
+dotnet build CS2\CSLModernMapCs2.csproj -c Release
 ```
 
-This command builds and deploys into the local game Mods directory. Exit the game before building. The checked-in renderer payload is version 6.7.1; it is separate from the Code Mod source version. Renderer updates are supplied through official mod releases. The mod does not download required files from the network.
+The CS1 build produces a verified `CS1/bin/private/CSLModernMap.dll`.
+The CS2 build also deploys into the local game Mods directory; exit CS2 first.
+Game/mod assemblies and viewer payloads must be supplied separately.
+The mods do not download required files from the network.
 
 ## License
 
