@@ -11,9 +11,11 @@ namespace CSLModernMap.Systems
     /// <summary>组装地图导出文档</summary>
     public sealed partial class MapExportUISystem
     {
-        private ExportResult CaptureCmmExport(out string text)
+        private ExportResult CaptureCmmExport(out string text, string outputDirectory = null,
+            SatelliteCapture.Image satellite = null, string satelliteWarning = null)
         {
-            var outputDirectory = ExportPaths.EnsureExportDirectory();
+            var includeOutsideTerrain = Mod.Settings.IncludeOutsideTerrain;
+            outputDirectory ??= ExportPaths.EnsureExportDirectory();
 
             EntityManager.CompleteAllTrackedJobs();
             var now = DateTime.Now;
@@ -25,6 +27,8 @@ namespace CSLModernMap.Systems
             var exportedNetworks = new HashSet<Entity>();
             var derived = new Cs2DerivedNetworkState();
             var optionalIssues = new CmmIssueCollector();
+            if (satelliteWarning != null)
+                optionalIssues.Warn("SATELLITE_CAPTURE_FAILED", satelliteWarning);
 
             var nodeJson = new StringBuilder(2 * 1024 * 1024);
             var networkJson = new StringBuilder(12 * 1024 * 1024);
@@ -37,7 +41,7 @@ namespace CSLModernMap.Systems
             var buildingCount = AppendBuildings(buildingJson, optionalIssues);
             var areas = AppendAreas(areaJson);
 
-            var terrain = TerrainExport.Build(World);
+            var terrain = TerrainExport.Build(World, includeOutsideTerrain);
             var mapTileGrid = "{\"columns\":23,\"rows\":23,\"tile_size_m\":"
                 + (14336d / 23d).ToString("R", CultureInfo.InvariantCulture)
                 + ",\"origin\":[-7168,-7168],\"source\":\"standard\"}";
@@ -59,7 +63,7 @@ namespace CSLModernMap.Systems
                 nodeJson.Length + networkJson.Length + buildingJson.Length + areaJson.Length
                 + terrain.Json.Length + 4096);
             json.AppendLine("{");
-            json.AppendLine("  \"schema_version\": \"cmm-v1\",");
+            json.AppendLine("  \"schema_version\": \"cmm1.1\",");
             json.AppendLine("  \"metadata\": {");
             json.Append("    \"origin\": {\"game\": \"cs2\", \"exporter\": \"CSLModernMapCs2\"");
             CmmJson.AppendProperty(json, "source_name", cityName);
@@ -113,6 +117,16 @@ namespace CSLModernMap.Systems
             json.Append("  \"terrain\": ");
             json.Append(terrain.Json);
             json.AppendLine(",");
+            if (satellite != null)
+            {
+                var bounds = satellite.Bounds;
+                json.Append("  \"satellite\": {\"world_bounds_xz\": [")
+                    .Append(CmmJson.FormatFloat(bounds.x)).Append(',')
+                    .Append(CmmJson.FormatFloat(bounds.y)).Append(',')
+                    .Append(CmmJson.FormatFloat(bounds.z)).Append(',')
+                    .Append(CmmJson.FormatFloat(bounds.w)).Append("], \"output_size\": ")
+                    .Append(SatelliteCapture.ImageSize.ToString(CultureInfo.InvariantCulture)).AppendLine("},");
+            }
             json.AppendLine("  \"nodes\": [");
             json.Append(nodeJson);
             json.AppendLine("  ],");
@@ -167,10 +181,10 @@ namespace CSLModernMap.Systems
             json.AppendLine("}");
 
             text = json.ToString();
-            var firstIssue = terrain.IssueCount > 0 ? terrain.FirstIssue
+            var firstIssue = satelliteWarning ?? (terrain.IssueCount > 0 ? terrain.FirstIssue
                 : transit.IssueCount > 0 ? transit.FirstIssue
                 : areas.IssueCount > 0 ? "部分区域缺少完整几何数据"
-                : optionalIssues.First;
+                : optionalIssues.First);
             return new ExportResult(path, now, nodeCount, networkCount, buildingCount,
                 transit.StopCount, transit.LineCount,
                 terrain.IssueCount + transit.IssueCount + areas.IssueCount + optionalIssues.Count,

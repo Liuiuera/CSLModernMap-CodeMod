@@ -23,7 +23,28 @@
     <!-- 与一代 Mod 保持一致：不生成 net48 子目录 -->
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(SatelliteTrials)' == 'true'">
+    <DefineConstants>$(DefineConstants);CS2_SATELLITE_TRIALS</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
+    <Reference Include="Cinemachine"><Private>false</Private></Reference>
+    <Reference Include="Colossal.UI"><Private>false</Private></Reference>
+    <Reference Include="Unity.RenderPipelines.Core.Runtime"><Private>false</Private></Reference>
+    <Reference Include="Unity.RenderPipelines.HighDefinition.Runtime"><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.ImageConversionModule"><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <Target Name="BlockSatelliteTrialPublication" BeforeTargets="Publish" Condition="'$(SatelliteTrials)' == 'true'">
+    <Error Text="Build without SatelliteTrials before publishing." />
+  </Target>
+
+  <ItemGroup>
+    <Compile Include="../shared/RendererLaunchDiagnostics.cs" Link="RendererLaunchDiagnostics.cs" />
+    <Compile Include="../shared/RendererManualInstall.cs" Link="RendererManualInstall.cs" />
+    <Compile Include="../tests/cs2-satellite-trials/*.cs"
+             Condition="'$(SatelliteTrials)' == 'true'" />
+    <None Include="../shared/renderer-manual-install.html" Link="CSLModernMapRenderer-help.html" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="Locales\*.json" LogicalName="CSLModernMap.Locales.%(Filename)%(Extension)" />
     <!-- 仅编译期使用；不随 Mod 分发 -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
@@ -47,6 +68,9 @@
     <Reference Include="Colossal.Localization">
       <Private>false</Private>
     </Reference>
+    <Reference Include="Colossal.UI.Binding">
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Colossal.IO.AssetDatabase">
       <Private>false</Private>
     </Reference>
@@ -59,7 +83,11 @@
     <Reference Include="Newtonsoft.Json">
       <Private>false</Private>
     </Reference>
-    <!-- 随包查看器载荷（.cslmr）就是 zip，解压走 BCL 的 ZipArchive / ZipArchiveEntry。
+    <!-- Unity 的 ZipArchive 会对 NoCompression 成员写 Deflate 封装。用游戏提供的库直接存储 PNG。 -->
+    <Reference Include="ICSharpCode.SharpZipLib">
+      <Private>false</Private>
+    </Reference>
+    <!-- 随包查看器载荷（.zip）就是 zip，解压走 BCL 的 ZipArchive / ZipArchiveEntry。
          官方 Mod.props 不隐式引用任何程序集，用哪个就得在这里显式列出来；
          运行时由游戏的 Mono 运行时提供，不需要随 Mod 落地（Private=false）。 -->
     <Reference Include="System.IO.Compression">
@@ -92,19 +120,19 @@
     因此必须在 DeployWIP 之后显式复制进去，否则本地部署脚本正常、线上 Mod 却缺查看器。
   -->
   <ItemGroup>
-    <CSLModernMapPayload Include="$(MSBuildProjectDirectory)\CSLModernMapRenderer.cslmr"
-                         Condition="Exists('$(MSBuildProjectDirectory)\CSLModernMapRenderer.cslmr')" />
-    <CSLModernMapPayload Include="$(MSBuildProjectDirectory)\CSLModernMapRenderer.cslmr.sha256"
-                         Condition="Exists('$(MSBuildProjectDirectory)\CSLModernMapRenderer.cslmr.sha256')" />
+    <CSLModernMapPayload Include="$(MSBuildProjectDirectory)\CSLModernMapRenderer.zip"
+                         Condition="Exists('$(MSBuildProjectDirectory)\CSLModernMapRenderer.zip')" />
+    <CSLModernMapPayload Include="$(MSBuildProjectDirectory)\CSLModernMapRenderer.zip.sha256"
+                         Condition="Exists('$(MSBuildProjectDirectory)\CSLModernMapRenderer.zip.sha256')" />
     <CSLModernMapPayload Include="$(MSBuildProjectDirectory)\renderer-version.txt"
                          Condition="Exists('$(MSBuildProjectDirectory)\renderer-version.txt')" />
   </ItemGroup>
 
   <Target Name="CheckCSLModernMapPayloadForPublish" BeforeTargets="Publish">
-    <Error Condition="!Exists('$(MSBuildProjectDirectory)\CSLModernMapRenderer.cslmr')"
-           Text="查看器载荷缺失：CSLModernMapRenderer.cslmr。" />
-    <Error Condition="!Exists('$(MSBuildProjectDirectory)\CSLModernMapRenderer.cslmr.sha256')"
-           Text="查看器载荷校验文件缺失：CSLModernMapRenderer.cslmr.sha256。" />
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\CSLModernMapRenderer.zip')"
+           Text="查看器载荷缺失：CSLModernMapRenderer.zip。" />
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\CSLModernMapRenderer.zip.sha256')"
+           Text="查看器载荷校验文件缺失：CSLModernMapRenderer.zip.sha256。" />
     <Error Condition="!Exists('$(MSBuildProjectDirectory)\renderer-version.txt')"
            Text="查看器版本文件缺失：renderer-version.txt。" />
     <Error Condition="!Exists('$(MSBuildProjectDirectory)\LICENSES\Carto-LICENSE.txt')"
@@ -112,6 +140,9 @@
   </Target>
 
   <Target Name="DeployCSLModernMapPayload" AfterTargets="DeployWIP">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\shared\renderer-manual-install.html"
+          DestinationFiles="$(DeployDir)\CSLModernMapRenderer-help.html"
+          SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(CSLModernMapPayload)"
           DestinationFiles="@(CSLModernMapPayload->'$(DeployDir)\%(Filename)%(Extension)')"
           SkipUnchangedFiles="true" />

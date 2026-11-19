@@ -5,11 +5,14 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Colossal.Mathematics;
 using Colossal.PSI.Common;
 using Game;
 using Game.City;
 using Game.UI.Localization;
 using Game.UI.Menu;
+using Game.UI;
+using Game.SceneFlow;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -27,9 +30,11 @@ namespace CSLModernMap.Systems
 
         private bool m_ExportRequested;
 
-        private bool m_ExportArmed;
+        private int m_ExportStartFrame = -1;
 
         private bool m_OpenAfterExport;
+
+        private bool m_ExportWithSatellite;
 
         private Task<ExportResult> m_ExportTask;
 
@@ -41,7 +46,14 @@ namespace CSLModernMap.Systems
 
         private static volatile string s_RendererError = "";
 
+        private static volatile bool s_RendererInstallationFailed;
+
         private static string s_PendingRendererNotice = "";
+
+        private static int s_ManualInstallPromptRequested;
+        private static string s_RendererRetryMapPath;
+        private static string s_ManualHelpDirectory;
+        private static string s_ManualHelpError;
 
         private static bool s_OpenFolderRequested;
 
@@ -114,26 +126,34 @@ namespace CSLModernMap.Systems
 
                 if (!string.IsNullOrEmpty(s_RendererError))
                 {
+                    if (s_RendererInstallationFailed)
+                        return string.Format(CultureInfo.InvariantCulture,
+                            global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.WaitingFailed"), s_RendererError);
                     return (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.A52C7E0D20")) + s_RendererError;
                 }
 
-                if (!RendererLauncher.IsSupported)
+                if (RendererLauncher.InstallationStatus == RendererInstallationStatus.Manual)
+                {
+                    return global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.Installed");
+                }
+
+                if (RendererLauncher.InstallationStatus == RendererInstallationStatus.Unsupported)
                 {
                     return global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.5FC5374073");
                 }
 
-                if (!RendererLauncher.HasPayload)
+                if (RendererLauncher.InstallationStatus == RendererInstallationStatus.MissingPayload)
                 {
                     return global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.BCF7D8C55D");
                 }
 
-                if (RendererLauncher.IsInstalled)
+                if (RendererLauncher.InstallationStatus == RendererInstallationStatus.Installed)
                 {
-                    return (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.C9D3F3D2BF")) + RendererLauncher.PayloadVersion;
+                    return (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.C9D3F3D2BF")) + RendererLauncher.StatusVersion;
                 }
 
-                return RendererLauncher.HasOlderInstallation
-                    ? (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.E726AAB194")) + RendererLauncher.PayloadVersion
+                return RendererLauncher.InstallationStatus == RendererInstallationStatus.Older
+                    ? (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.E726AAB194")) + RendererLauncher.StatusVersion
                         + (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.110B58EB74"))
                     : (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.41D3D2CC44"));
             }
@@ -188,6 +208,10 @@ namespace CSLModernMap.Systems
 
         protected override void OnDestroy()
         {
+            CancelSatelliteExport();
+#if CS2_SATELLITE_TRIALS
+            CancelSatelliteTrials();
+#endif
             if (ReferenceEquals(s_Instance, this))
             {
                 s_Instance = null;
@@ -203,6 +227,11 @@ namespace CSLModernMap.Systems
             if (!string.IsNullOrEmpty(rendererNotice))
             {
                 ShowNotification(RendererNoticeId, rendererNotice);
+            }
+
+            if (Interlocked.Exchange(ref s_ManualInstallPromptRequested, 0) != 0)
+            {
+                ShowManualInstallPrompt();
             }
 
             if (s_OpenFolderRequested)
@@ -234,10 +263,13 @@ namespace CSLModernMap.Systems
                 return;
             }
 
-            if (m_ExportArmed)
+            if (m_ExportStartFrame >= 0)
             {
-                m_ExportArmed = false;
-                ProcessExport();
+                if (UnityEngine.Time.frameCount >= m_ExportStartFrame)
+                {
+                    m_ExportStartFrame = -1;
+                    ProcessExport();
+                }
                 return;
             }
 
@@ -247,8 +279,15 @@ namespace CSLModernMap.Systems
             }
 
             m_ExportRequested = false;
-            m_ExportArmed = true;
-            ExportReport.MarkQueued();
+            // Let the options binding update and render before blocking on city capture.
+            m_ExportStartFrame = UnityEngine.Time.frameCount + (m_ExportWithSatellite ? 1 : 2);
+            if (!m_ExportWithSatellite)
+                MarkExportStarted("CSLModernMap.UI.ExportProgress.CapturingCity");
+        }
+
+        private void MarkExportStarted(string statusKey)
+        {
+            ExportReport.MarkRunning(statusKey);
             ShowNotification(ResultNoticeId, ExportReport.StartNotice, ProgressState.Indeterminate, 0);
         }
 
@@ -277,27 +316,83 @@ namespace CSLModernMap.Systems
 
         private static void QueueExport(bool openAfterwards)
         {
-            if (s_Instance == null)
+            var system = s_Instance;
+            if (system == null)
             {
                 Mod.log.Warn("[export] 当前没有已载入的城市，无法执行导出");
                 return;
             }
 
-            if (!ExportReport.IsBusy)
-            {
-                if (openAfterwards && RendererLauncher.HasPayload
-                    && !RendererLauncher.IsInstalled && RendererLauncher.HasOlderInstallation)
-                {
-                    s_Instance.ShowNotification(RendererStartNoticeId,
-                        (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.QueueExport.57CD67E80A"))
-                        + RendererLauncher.PayloadVersion
-                        + (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.QueueExport.606539105E")));
-                }
+            if (ExportReport.IsBusy)
+                return;
 
-                s_Instance.m_OpenAfterExport = openAfterwards;
-                s_Instance.m_ExportRequested = true;
-                ExportReport.MarkQueued();
+            var game = GameManager.instance;
+            if (game != null && game.gameMode == GameMode.Game && Mod.Settings.IncludeSatelliteImage)
+            {
+                system.ShowSatelliteSaveReminder(game, openAfterwards);
+                return;
             }
+
+            system.EnqueueExport(openAfterwards, withSatellite: false);
+        }
+
+        private void EnqueueExport(bool openAfterwards, bool withSatellite)
+        {
+            if (openAfterwards && RendererLauncher.HasPayload
+                && !RendererLauncher.IsInstalled && RendererLauncher.HasOlderInstallation)
+            {
+                ShowNotification(RendererStartNoticeId,
+                    (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.QueueExport.57CD67E80A"))
+                    + RendererLauncher.PayloadVersion
+                    + (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.QueueExport.606539105E")));
+            }
+
+            m_OpenAfterExport = openAfterwards;
+            m_ExportWithSatellite = withSatellite;
+            m_ExportRequested = true;
+            ExportReport.MarkQueued();
+        }
+
+        private static void ShowRendererInstallConfirmation()
+        {
+            if (!RendererLauncher.IsSupported || s_RendererWorkRunning) return;
+            var dialog = new ConfirmationDialog(
+                LocalizedString.Value(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.Confirm")),
+                LocalizedString.Value(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.ConfirmGuide")),
+                LocalizedString.Value(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.CheckAndOpen")),
+                LocalizedString.Value(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.OpenHelp")), Array.Empty<LocalizedString>());
+            GameManager.instance.userInterface.appBindings.ShowConfirmationDialog(dialog, result =>
+            {
+                if (result == 0) CheckAndOpenRenderer();
+                else if (result == 1) OpenManualInstallHelp();
+            });
+        }
+
+        private static void CheckAndOpenRenderer()
+        {
+            if (s_RendererWorkRunning) return;
+            if (RendererLauncher.RefreshInstallationStatus())
+            {
+                s_RendererError = "";
+                s_RendererInstallationFailed = false;
+                StartRendererWork(() =>
+                {
+                    RendererLauncher.Launch(s_RendererRetryMapPath);
+                    PostRendererNotice(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.Opened"));
+                });
+                return;
+            }
+            PostRendererNotice(RendererStatus);
+            var dialog = new ConfirmationDialog(
+                LocalizedString.Value(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.CheckTitle")),
+                LocalizedString.Value(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.NotFound")),
+                LocalizedString.Value(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.OpenHelp")),
+                LocalizedString.Id("Common.CLOSE"), Array.Empty<LocalizedString>());
+            GameManager.instance.userInterface.appBindings.ShowConfirmationDialog(dialog, result =>
+            {
+                if (result != 0) return;
+                OpenManualInstallHelp();
+            });
         }
 
         internal static void RequestInstallRenderer()
@@ -307,16 +402,29 @@ namespace CSLModernMap.Systems
                 return;
             }
 
+            s_RendererRetryMapPath = null;
+
+            if (RendererLauncher.HasManualInstallation)
+            {
+                s_RendererError = "";
+                s_RendererInstallationFailed = false;
+                RendererLauncher.RefreshInstallationStatus();
+                PostRendererNotice(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.Installed"));
+                return;
+            }
+
             if (!RendererLauncher.HasPayload)
             {
+                s_RendererInstallationFailed = true;
                 FailRenderer(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RequestInstallRenderer.01A918F707"));
+                Interlocked.Exchange(ref s_ManualInstallPromptRequested, 1);
                 return;
             }
 
             ShowNotificationOnGameThread(RendererStartNoticeId, InstallingRendererNotice);
             StartRendererWork(() =>
             {
-                RendererLauncher.EnsureInstalled(true);
+                EnsureRendererInstalled(true);
                 PostRendererNotice(string.Format(System.Globalization.CultureInfo.InvariantCulture, global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RequestInstallRenderer.AB6548D24F"), RendererLauncher.PayloadVersion));
             });
         }
@@ -328,9 +436,13 @@ namespace CSLModernMap.Systems
                 return;
             }
 
-            if (!RendererLauncher.HasPayload)
+            s_RendererRetryMapPath = exportPath;
+
+            if (!RendererLauncher.HasManualInstallation && !RendererLauncher.HasPayload)
             {
+                s_RendererInstallationFailed = true;
                 FailRenderer(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.OpenInRenderer.01A918F707"));
+                Interlocked.Exchange(ref s_ManualInstallPromptRequested, 1);
                 return;
             }
 
@@ -346,13 +458,56 @@ namespace CSLModernMap.Systems
 
             StartRendererWork(() =>
             {
-                RendererLauncher.EnsureInstalled();
+                EnsureRendererInstalled();
                 RendererLauncher.Launch(exportPath);
                 if (installing)
                 {
                     PostRendererNotice(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.OpenInRenderer.B5717EE887"));
                 }
             });
+        }
+
+        private static void EnsureRendererInstalled(bool reinstall = false)
+        {
+            try
+            {
+                RendererLauncher.EnsureInstalled(reinstall);
+            }
+            catch
+            {
+                s_RendererInstallationFailed = true;
+                throw;
+            }
+        }
+
+        private static void ShowManualInstallPrompt()
+        {
+            s_ManualHelpDirectory = ExportPaths.RendererDirectory;
+            s_ManualHelpError = s_RendererError;
+            try
+            {
+                s_ManualHelpDirectory = RendererLauncher.PrepareManualInstallation();
+            }
+            catch (Exception error)
+            {
+                Mod.log.Error("[renderer] " + error);
+                s_ManualHelpError += "\n\n" + error;
+            }
+            OpenManualInstallHelp();
+        }
+
+        private static void OpenManualInstallHelp()
+        {
+            try
+            {
+                RendererLauncher.OpenInstallHelp(s_ManualHelpDirectory, s_ManualHelpError);
+                ShowRendererInstallConfirmation();
+            }
+            catch (Exception error)
+            {
+                Mod.log.Error("[renderer] " + error);
+                ShowNotificationOnGameThread(RendererNoticeId, error.Message);
+            }
         }
 
         private static void StartRendererWork(Action work)
@@ -366,6 +521,7 @@ namespace CSLModernMap.Systems
 
                 s_RendererWorkRunning = true;
                 s_RendererError = "";
+                s_RendererInstallationFailed = false;
             }
 
             var thread = new System.Threading.Thread(() =>
@@ -373,6 +529,7 @@ namespace CSLModernMap.Systems
                 try
                 {
                     work();
+                    RendererLauncher.RefreshInstallationStatus();
                 }
                 catch (Exception e)
                 {
@@ -385,6 +542,8 @@ namespace CSLModernMap.Systems
                     {
                         s_RendererWorkRunning = false;
                     }
+                    if (s_RendererInstallationFailed)
+                        Interlocked.Exchange(ref s_ManualInstallPromptRequested, 1);
                 }
             })
             {
@@ -399,7 +558,10 @@ namespace CSLModernMap.Systems
             s_RendererError = string.IsNullOrEmpty(reason)
                 ? (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.FailRenderer.13A46616E1"))
                 : reason;
-            PostRendererNotice((global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.FailRenderer.0DE817BA18")) + s_RendererError);
+            PostRendererNotice(s_RendererInstallationFailed
+                ? string.Format(CultureInfo.InvariantCulture,
+                    global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.WaitingFailed"), s_RendererError)
+                : (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.FailRenderer.0DE817BA18")) + s_RendererError);
         }
 
         private static void PostRendererNotice(string message)
@@ -448,39 +610,50 @@ namespace CSLModernMap.Systems
 
         private void ProcessExport()
         {
-            ExportReport.MarkRunning();
-
             try
             {
-                if (m_NodeQuery.IsEmptyIgnoreFilter)
+                var game = Game.SceneFlow.GameManager.instance;
+                if (game == null || (game.gameMode & GameMode.GameOrEditor) == 0)
                 {
                     var noCity = ExportReport.NoCityReason;
-                    Mod.log.Warn("[export] 已拒绝请求：当前没有道路节点");
+                    Mod.log.Warn("[export] 已拒绝请求：当前没有已加载的游戏或编辑器上下文");
                     ExportReport.MarkFailed(noCity);
                     m_OpenAfterExport = false;
                     ShowNotification(ResultNoticeId, ExportReport.FailureNotice(noCity), ProgressState.Failed, 0);
                     return;
                 }
 
-                var result = CaptureCmmExport(out var text);
-                m_ExportProgress = -1;
-                m_ShownExportProgress = -1;
-                ShowNotification(ResultNoticeId,
-                    global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.ExportProgress.Validating"),
-                    ProgressState.Indeterminate, 0);
-
-                // 后台只处理已采集的文本，不访问 ECS、游戏系统或 UI。
-                m_ExportTask = Task.Run(() =>
+                if (game.gameMode == GameMode.Game && m_ExportWithSatellite)
                 {
-                    CmmWriter.ValidateAndWrite(result.Path, text,
-                        progress => Volatile.Write(ref m_ExportProgress, progress));
-                    return result;
-                });
+                    m_SatelliteExport = RunSatelliteExport(game);
+                    game.StartCoroutine(m_SatelliteExport);
+                    return;
+                }
+
+                if (m_ExportWithSatellite)
+                    MarkExportStarted("CSLModernMap.UI.ExportProgress.CapturingCity");
+                var result = CaptureCmmExport(out var text);
+                BeginExportWrite(result, text);
             }
             catch (Exception e)
             {
                 FailExport(e);
             }
+        }
+
+        private void BeginExportWrite(ExportResult result, string text, byte[] satellitePng = null)
+        {
+            m_ExportProgress = -1;
+            m_ShownExportProgress = -1;
+            ExportReport.MarkRunning("CSLModernMap.UI.ExportProgress.Validating");
+
+            // 后台只处理已采集的数据，不访问 ECS、游戏系统或 UI。
+            m_ExportTask = Task.Run(() =>
+            {
+                CmmWriter.ValidateAndWrite(result.Path, text,
+                    progress => Volatile.Write(ref m_ExportProgress, progress), satellitePng);
+                return result;
+            });
         }
 
         private void UpdateExport()
@@ -491,9 +664,10 @@ namespace CSLModernMap.Systems
                 if (progress != m_ShownExportProgress)
                 {
                     m_ShownExportProgress = progress;
-                    ShowNotification(ResultNoticeId, string.Format(CultureInfo.InvariantCulture,
-                        global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.ExportProgress.Writing"), progress),
-                        ProgressState.Progressing, progress);
+                    if (progress >= CmmWriter.ArchiveVerificationProgress)
+                        ExportReport.MarkRunning("CSLModernMap.UI.ExportProgress.CheckingArchive");
+                    else
+                        ExportReport.MarkRunning("CSLModernMap.UI.ExportProgress.Writing", progress);
                 }
                 return;
             }
@@ -566,12 +740,21 @@ namespace CSLModernMap.Systems
         private static string GetRenderedDisplayName(
             Game.UI.NameSystem nameSystem, Entity entity, string context, out bool isCustom)
         {
+            isCustom = false;
             if (nameSystem == null || entity == Entity.Null)
-                throw new InvalidOperationException("[" + context + "] 名称来源不可用");
-            string customName;
-            isCustom = nameSystem.TryGetCustomName(entity, out customName)
-                && !string.IsNullOrEmpty(customName);
-            return isCustom ? customName : nameSystem.GetRenderedLabelName(entity) ?? "";
+                return "";
+            try
+            {
+                string customName;
+                isCustom = nameSystem.TryGetCustomName(entity, out customName)
+                    && !string.IsNullOrEmpty(customName);
+                return isCustom ? customName : nameSystem.GetRenderedLabelName(entity) ?? "";
+            }
+            catch (Exception e)
+            {
+                Mod.log.Warn("[" + context + "] 名称解析失败: " + e.GetType().Name + ": " + e.Message);
+                return "";
+            }
         }
 
         private string GetPrefabName(Entity prefab)
@@ -590,14 +773,21 @@ namespace CSLModernMap.Systems
             var name = "";
             if (m_PrefabSystem != null)
             {
-                name = m_PrefabSystem.GetPrefabName(prefab) ?? "";
-                if (name.Length == 0)
+                try
                 {
-                    Game.Prefabs.PrefabBase prefabBase;
-                    if (m_PrefabSystem.TryGetPrefab(prefab, out prefabBase) && prefabBase != null)
+                    name = m_PrefabSystem.GetPrefabName(prefab) ?? "";
+                    if (name.Length == 0)
                     {
-                        name = prefabBase.name ?? "";
+                        Game.Prefabs.PrefabBase prefabBase;
+                        if (m_PrefabSystem.TryGetPrefab(prefab, out prefabBase) && prefabBase != null)
+                        {
+                            name = prefabBase.name ?? "";
+                        }
                     }
+                }
+                catch (Exception e)
+                {
+                    Mod.log.Warn("[export] 预制体名称读取失败: " + e.GetType().Name + ": " + e.Message);
                 }
             }
 
@@ -636,6 +826,16 @@ namespace CSLModernMap.Systems
             if (average < -1f) return "TUNNEL";
             if (average > 1f) return "ELEVATED";
             return "GROUND";
+        }
+
+        private static void AppendCurve(StringBuilder json, Game.Net.Curve curve)
+        {
+            var samples = Math.Max(2, Math.Min(64, (int)Math.Ceiling(curve.m_Length / 24f) + 1));
+            for (var i = 0; i < samples; i++)
+            {
+                if (i > 0) json.Append(',');
+                AppendVec3(json, MathUtils.Position(curve.m_Bezier, (float)i / (samples - 1)));
+            }
         }
 
         private static void AppendVec3(StringBuilder json, Unity.Mathematics.float3 value)

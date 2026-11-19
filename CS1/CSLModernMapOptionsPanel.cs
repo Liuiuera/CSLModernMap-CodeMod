@@ -33,6 +33,8 @@ namespace CSLModernMap.UI
             UILabel hint = Label(ExportActions.SafeTmpeAvailable() ? "TMPE_READY_HINT" : "TMPE_OPTIONAL_HINT", width, ref y, 46f);
             hint.textColor = new Color32(180, 200, 215, 255);
 
+
+
             Title("STATUS_GROUP", width, ref y);
             UILabel status = Label("EXPORT_IDLE", width, ref y, 96f);
             UILabel lastExport = Label("LAST_EXPORT", width, ref y, 40f);
@@ -51,6 +53,12 @@ namespace CSLModernMap.UI
             UILabel progressLabel = Label("", width, ref y, 30f);
             progressLabel.isVisible = false;
 
+            Title("SATELLITE_GROUP", width, ref y);
+            CSLModernMapConfig satelliteConfig = CSLModernMapConfig.LoadOrDefault();
+            UICheckBox includeSatellite = UICheckBoxes.AddPlainCheckBox(this, 0f, y, Translations.Translate("SATELLITE_ENABLED"));
+            includeSatellite.isChecked = satelliteConfig.SatelliteEnabled;
+            includeSatellite.eventCheckChanged += (component, value) => { satelliteConfig.SatelliteEnabled = value; satelliteConfig.Save(); };
+            y += 34f;
             Title("OUTPUT_GROUP", width, ref y);
             UILabel path = Label("", width, ref y, 50f);
             path.text = CSLModernMapConfig.LoadOrDefault().GetOutputDirPath();
@@ -63,7 +71,7 @@ namespace CSLModernMap.UI
             y += 44f;
 
             Title("RENDERER_GROUP", width, ref y);
-            UILabel rendererStatus = Label("RENDERER_STATUS", width, ref y, 30f);
+            UILabel rendererStatus = Label("RENDERER_STATUS", width, ref y, 64f);
             UIButton install = Button("INSTALL_RENDERER", 0f, y, buttonWidth);
             install.eventClicked += (component, click) => ExportActions.InstallRenderer();
             UIButton rendererFolder = Button("OPEN_RENDERER_FOLDER", buttonWidth + 12f, y, buttonWidth);

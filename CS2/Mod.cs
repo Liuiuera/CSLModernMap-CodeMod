@@ -1,4 +1,5 @@
 using Colossal.Logging;
+using Colossal.IO.AssetDatabase;
 using Game;
 using Game.Modding;
 using Game.SceneFlow;
@@ -12,7 +13,7 @@ namespace CSLModernMap
         public static readonly ILog log =
             LogManager.GetLogger("CSLModernMap").SetShowsErrorsInUI(false);
 
-        public const string ModVersion = "6.7.3f1";
+        public const string ModVersion = "6.7.4";
 
         private static readonly string[] SupportedLocaleIds =
         {
@@ -30,7 +31,7 @@ namespace CSLModernMap
             "ru-RU",
         };
 
-        private CSLModernMapSettings m_Settings;
+        internal static CSLModernMapSettings Settings { get; private set; }
 
         public void OnLoad(UpdateSystem updateSystem)
         {
@@ -42,19 +43,24 @@ namespace CSLModernMap
 
             updateSystem.UpdateAt<Systems.MapExportUISystem>(SystemUpdatePhase.UIUpdate);
 
-            m_Settings = new CSLModernMapSettings(this);
+            Settings = new CSLModernMapSettings(this);
+            AssetDatabase.global.LoadSettings(nameof(CSLModernMap), Settings, new CSLModernMapSettings(this));
             foreach (string localeId in SupportedLocaleIds)
             {
                 GameManager.instance.localizationManager.AddSource(
-                    localeId, new SettingsLocale(m_Settings, localeId));
+                    localeId, new SettingsLocale(Settings, localeId));
             }
-            m_Settings.RegisterInOptionsUI();
+            Settings.RegisterInOptionsUI();
         }
 
         public void OnDispose()
         {
-            m_Settings?.UnregisterInOptionsUI();
-            m_Settings = null;
+            Systems.MapExportUISystem.StopSatelliteExport();
+#if CS2_SATELLITE_TRIALS
+            Systems.MapExportUISystem.StopSatelliteTrials();
+#endif
+            Settings?.UnregisterInOptionsUI();
+            Settings = null;
         }
     }
 }

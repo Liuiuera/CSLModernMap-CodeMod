@@ -118,6 +118,7 @@ namespace CSLModernMap.Exporter
             ExportStages.Report(progress, 60, "EXPORT_PROGRESS_MAPPING");
             Dictionary<int, XMLNode> nodeMap = new Dictionary<int, XMLNode>();
             JArray nodes = new JArray(), networks = new JArray(), issues = new JArray();
+            if (snapshot.SatelliteWarning != null) issues.Add(Issue("SATELLITE_CAPTURE_FAILED", snapshot.SatelliteWarning, null));
             foreach (XMLNode n in snapshot.NodeList)
             {
                 nodeMap.Add(n.Id, n);
@@ -158,7 +159,7 @@ namespace CSLModernMap.Exporter
                     { "display_name", s.CustomName ?? "" }, { "game_name", s.GameName ?? "" }, { "source_raw", s.ItemClass ?? "" } };
                 if (facts.Footprint != null) record["footprint"] = Points(facts.Footprint, true);
                 if (!facts.CarSpeedReadFailed && assumedDirection)
-                    issues.Add(Issue("CAR_DIRECTION_ASSUMED", "Segment " + s.Id + " missing car direction; unknown directions allowed.", s.Id));
+                    issues.Add(Issue("CAR_DIRECTION_ASSUMED", "Segment " + s.Id + " missing car direction; unknown directions allowed.", s.Id, severity: "info"));
                 networks.Add(record); networkMap.Add(s.Id, record);
                 networkSources[s.Id.ToString(CultureInfo.InvariantCulture)] = new JObject { { "segment_id", s.Id }, { "invert", facts.Invert } };
                 if (facts.Kind == "ROAD")
@@ -208,9 +209,10 @@ namespace CSLModernMap.Exporter
                     if (path.Count == 0 || (int)path[path.Count - 1] != id) path.Add(id);
                 }
                 if (problem == null) record["path_segment_ids"] = path;
-                else issues.Add(Issue("INVALID_TRANSIT_PATH", problem + " Path omitted; use stop-to-stop geometry.", s.Id));
+                else issues.Add(Issue("INVALID_TRANSIT_PATH", problem + " Path omitted; use stop-to-stop geometry.", s.Id, severity: "info"));
             }
             foreach (string problem in snapshot.Problems) issues.Add(Issue("CS1_GEOMETRY", problem, null));
+            foreach (string information in snapshot.Information) issues.Add(Issue("CS1_GEOMETRY", information, null, severity: "info"));
             ExportStages.Report(progress, 68, "EXPORT_PROGRESS_MAPPING");
             JArray buildings = new JArray(); HashSet<int> buildingIds = new HashSet<int>();
             foreach (XMLBuilding b in snapshot.BuildingList) buildingIds.Add(b.Id);
@@ -230,10 +232,10 @@ namespace CSLModernMap.Exporter
                 string display = string.IsNullOrEmpty(b.MyName) ? b.DisplayName : b.MyName;
                 int? areaId = b.ParkId != 0 && parkIds.Contains(b.ParkId) ? (int?)-(b.ParkId + 1) : null;
                 if (b.ParkId != 0 && !areaId.HasValue)
-                    issues.Add(Issue("MISSING_BUILDING_AREA", "Building " + b.Id + " area assignment omitted: park " + b.ParkId + " unavailable.", b.Id, "building"));
+                    issues.Add(Issue("MISSING_BUILDING_AREA", "Building " + b.Id + " area assignment omitted: park " + b.ParkId + " unavailable.", b.Id, "building", "info"));
                 if (string.IsNullOrEmpty(b.CategoryId) || string.IsNullOrEmpty(b.CategoryName) || string.IsNullOrEmpty(b.CategoryLocale))
                     issues.Add(Issue("MISSING_BUILDING_CATEGORY", "Building " + b.Id
-                        + " has no complete official category localization; category label omitted.", b.Id, "building"));
+                        + " has no complete official category localization; category label omitted.", b.Id, "building", "info"));
                 buildings.Add(new JObject { { "id", b.Id }, { "name", b.Name ?? "" }, { "display_name", Name(display, string.IsNullOrEmpty(b.MyName) ? "game" : "custom") },
                     { "category_id", b.CategoryId ?? "" }, { "category_name", b.CategoryName ?? "" }, { "category_locale", b.CategoryLocale ?? "" },
                     { "growth_kind", b.GrowthKind ?? "unknown" }, { "growth_use", b.GrowthUse ?? "" },
@@ -255,7 +257,7 @@ namespace CSLModernMap.Exporter
                 bool hasOwner = p.MainBuildingId != 0 && buildingIds.Contains(p.MainBuildingId);
                 area["owner_building_id"] = hasOwner ? new JValue(p.MainBuildingId) : JValue.CreateNull();
                 if (p.MainBuildingId != 0 && !hasOwner)
-                    issues.Add(Issue("MISSING_AREA_OWNER", "Park " + p.Id + " owner assignment omitted: building " + p.MainBuildingId + " unavailable.", -(p.Id + 1), "district"));
+                    issues.Add(Issue("MISSING_AREA_OWNER", "Park " + p.Id + " owner assignment omitted: building " + p.MainBuildingId + " unavailable.", -(p.Id + 1), "district", "info"));
                 districts.Add(area);
                 districtSources[(-(p.Id + 1)).ToString(CultureInfo.InvariantCulture)] = p.Id;
             }
@@ -292,26 +294,7 @@ namespace CSLModernMap.Exporter
                     { "stop_ids", routeStops }, { "is_closed", closed }, { "geometry_kind", "STOP_DIRECT" }, { "path_segment_ids", new JArray() } });
             }
             ExportStages.Report(progress, 76, "EXPORT_PROGRESS_MAPPING");
-            JArray forests = new JArray(), objects = new JArray();
-            int forestRow = 0;
-            foreach (string forest in snapshot.ForestList)
-            {
-                JArray data = new JArray(); bool valid = true;
-                foreach (string value in forest.Split(',')) if (value.Length > 0)
-                {
-                    int parsed;
-                    if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed)) { valid = false; break; }
-                    data.Add(parsed);
-                }
-                // Preserve row indices: removing one row would shift all following forest cells.
-                if (!valid)
-                {
-                    forests.Clear();
-                    issues.Add(Issue("INVALID_FOREST_GRID", "Forests omitted: invalid data at row " + forestRow + ".", null));
-                    break;
-                }
-                forests.Add(new JObject { { "data", data } }); forestRow++;
-            }
+            JArray objects = new JArray();
             if (snapshot.ProceduralObjects != null) foreach (XMLProceduralObject p in snapshot.ProceduralObjects)
                 objects.Add(new JObject { { "id", p.Id }, { "pos", new JArray(p.X, p.Y, p.Z) }, { "center_x", p.CenterX }, { "center_z", p.CenterZ },
                     { "extent_x", p.ExtentX }, { "extent_z", p.ExtentZ }, { "rotation_y", p.RotationY }, { "scale", p.Scale },
@@ -330,7 +313,7 @@ namespace CSLModernMap.Exporter
                 { "sea_level", snapshot.SeaLevel }, { "terrain", new JObject { { "height", Grid(snapshot.TerrainHeight) }, { "water_depth", Grid(snapshot.TerrainWater) },
                     { "origin", new JArray(-8640, -8640) }, { "cell", 17280.0 / 1081 }, { "rows", 1081 }, { "cols", 1081 } } },
                 { "nodes", nodes }, { "networks", networks }, { "buildings", buildings }, { "districts", districts },
-                { "transit_lines", lines }, { "stops", stops }, { "routes", routes }, { "forests", forests }, { "procedural_objects", objects },
+                { "transit_lines", lines }, { "stops", stops }, { "routes", routes }, { "forests", new JArray() }, { "procedural_objects", objects },
                 { "derived", new JObject() }, { "issues", issues }, { "extensions", extensions } };
             if (snapshot.TerrainHeight == null && snapshot.TerrainWater == null)
             { document.Remove("terrain"); document.Remove("sea_level"); }
@@ -354,7 +337,7 @@ namespace CSLModernMap.Exporter
         }
         private static void AddChild(Dictionary<int, HashSet<int>> children, int parent, int child)
         { HashSet<int> ids; if (!children.TryGetValue(parent, out ids)) { ids = new HashSet<int>(); children.Add(parent, ids); } ids.Add(child); }
-        private static JObject Issue(string code, string message, int? id, string kind = "network")
-        { return new JObject { { "severity", "warn" }, { "code", code }, { "message", message }, { "refs", id.HasValue ? new JArray(new JObject { { "kind", kind }, { "id", id.Value } }) : new JArray() } }; }
+        private static JObject Issue(string code, string message, int? id, string kind = "network", string severity = "warn")
+        { return new JObject { { "severity", severity }, { "code", code }, { "message", message }, { "refs", id.HasValue ? new JArray(new JObject { { "kind", kind }, { "id", id.Value } }) : new JArray() } }; }
     }
 }

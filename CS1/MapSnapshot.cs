@@ -10,7 +10,9 @@ namespace CSLModernMap.Exporter
         public readonly Dictionary<int, NetworkFacts> Networks = new Dictionary<int, NetworkFacts>();
         public byte[] TerrainHeight;
         public byte[] TerrainWater;
+        public string SatelliteWarning;
         public readonly List<string> Problems = new List<string>();
+        public readonly List<string> Information = new List<string>();
         public bool SimulationPaused;
         internal RoadGeometry.SurfaceCapture Surfaces;
     }

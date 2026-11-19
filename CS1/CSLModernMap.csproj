@@ -18,6 +18,10 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- 嵌入式资源：macOS 渲染器安装指南，渲染器缺失时由 Mod 抽取到输出目录并用浏览器打开 -->
+    <Compile Include="../shared/RendererLaunchDiagnostics.cs" Link="RendererLaunchDiagnostics.cs" />
+    <Compile Include="../shared/RendererManualInstall.cs" Link="RendererManualInstall.cs" />
+    <None Include="../shared/renderer-manual-install.html" Link="CSLModernMapRenderer-help.html" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Translations\*.csv" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="mac-guide.html" />
   </ItemGroup>
   <ItemGroup>

@@ -321,7 +321,7 @@ namespace CSLModernMap.Exporter
                     missing.Add(record.Id.ToString(System.Globalization.CultureInfo.InvariantCulture));
             }
             if (missing.Count > 0)
-                snapshot.Problems.Add("No native footprint for " + missing.Count
+                snapshot.Information.Add("No native footprint for " + missing.Count
                     + " road segments; centerline fallback used: " + string.Join(",", missing.ToArray()));
         }
         internal static List<XMLVector3> BuildRing(Mouth startMouth, Mouth endMouth, List<Mouth> start, List<Mouth> end,

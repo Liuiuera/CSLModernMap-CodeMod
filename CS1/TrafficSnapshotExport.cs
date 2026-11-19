@@ -3,11 +3,29 @@ using System.Collections.Generic;
 
 namespace CSLModernMap.Traffic
 {
-    /// <summary>交通快照 JSON；保留默认值字段，世界坐标单位为米。</summary>
+    /// <summary>
+    /// 交通快照 JSON 导出数据模型（面向分析软件，schema 稳定、字段必写）。
+    ///
+    /// v1.1 版本的"分析软件友好"承诺：
+    ///   1. 所有字段**必定存在**，即使是默认值 0/false/空数组。分析软件不需要写"key 存在？→ 再读"的防御代码。
+    ///      - JsonHelper 配置：DefaultValueHandling.Include + NullValueHandling.Include。
+    ///      - 例如 laneIndex=0、speed=0 都会明确写出为 0，不会被序列化忽略。
+    ///   2. 所有**坐标统一米**单位（游戏世界坐标 x/z 为平面，y 为高度），与 CSLModernMap 导出 .mmap 完全一致，可直接叠加渲染。
+    ///   3. 拥堵率 congestion 已归一化至 [0,1]；laneType≠Vehicle 的车道 congestion=-1（表示该车道无交通统计意义）。
+    ///   4. 新增 relativeSpeed 字段 (0~1) —— 对于分析软件的拥堵热力图来说 relativeSpeed 比原始 speed 更常用。
+    ///   5. 新增 segment 级 aggregation stats (RoadSegmentAggStats) —— 分析软件无需自己向上聚合。
+    ///   6. 新增 SnapshotStats.vehicleLanes / avgCongestion / cityWideCongestion 等 KPI。
+    ///   7. schemaVersion 语义化版本号：主版本号破坏变更时加 1，小版本号新增字段时加 1。
+    /// </summary>
     [Serializable]
     public class TrafficSnapshotExport
     {
-        /// <summary>快照格式版本；1.2 包含信号灯状态。</summary>
+        /// <summary>
+        /// Schema 语义化版本号（分析软件第一字段就可以读这个做兼容性判断）。
+        ///   "1.2" = 当前版本（新增 lights 红绿灯节点数据）；
+        ///   "1.1" = 上一版本（车道级拥堵 + 聚合统计）；
+        ///   "1.0" = 之前版本（有 laneIndex/speed 丢 key / speed 单位错 bug 的那版）。
+        /// </summary>
         public string schemaVersion { get; set; }
 
         /// <summary>城市名称。</summary>
@@ -22,7 +40,11 @@ namespace CSLModernMap.Traffic
         /// <summary>道路段列表（按 NetSegment ID 升序枚举）。</summary>
         public List<RoadSegmentExport> segments { get; set; }
 
-        /// <summary>通过 RoadBaseAI 读取的各节点信号灯状态。</summary>
+        /// <summary>
+        /// 红绿灯节点列表（schema v1.2 新增）。
+        /// 数据来源为游戏本体 RoadBaseAI（不依赖 TM:PE），
+        /// 每个节点含其所有连接道路方向的当前灯色。
+        /// </summary>
         public List<NodeLightExport> lights { get; set; }
 
         /// <summary>全市总览统计信息摘要。</summary>
@@ -40,14 +62,18 @@ namespace CSLModernMap.Traffic
         }
     }
 
-    /// <summary>游戏原生信号灯节点，不依赖 TM:PE。</summary>
+    /// <summary>
+    /// 单个红绿灯节点导出实体（schema v1.2 新增）。
+    /// 数据来源：游戏本体 NetNode.Flags.TrafficLights + RoadBaseAI.GetTrafficLightState，
+    /// 不依赖 TM:PE —— 即使 TM:PE 未启用，只要导出地图/交通快照就会带上。
+    /// </summary>
     [Serializable]
     public class NodeLightExport
     {
         /// <summary>NetNode ID（ushort）。</summary>
         public int nodeId { get; set; }
 
-        /// <summary>红绿灯节点世界坐标（米，x/z 平面 + y 高度），与 CMM 节点坐标一致。</summary>
+        /// <summary>红绿灯节点世界坐标（米，x/z 平面 + y 高度），与 .mmap 节点坐标一致。</summary>
         public Vec3 position { get; set; }
 
         /// <summary>红绿灯是否启用（NetNode.Flags.TrafficLights）。采集时仅遍历启用节点，恒为 true。</summary>
@@ -70,7 +96,7 @@ namespace CSLModernMap.Traffic
     }
 
     /// <summary>
-    /// 单条连接道路方向的信号灯状态。
+    /// 单条连接道路方向的信号灯状态（schema v1.2 新增）。
     /// </summary>
     [Serializable]
     public class LightStateExport
@@ -78,7 +104,11 @@ namespace CSLModernMap.Traffic
         /// <summary>连接该红绿灯节点的 NetSegment ID。</summary>
         public int segmentId { get; set; }
 
-        /// <summary>机动车灯色；yellow 同时表示 RedToGreen 与 GreenToRed。</summary>
+        /// <summary>
+        /// 该方向机动车灯状态（可读字符串）：
+        ///   "green" / "red" / "yellow" / "unknown"。
+        ///   yellow 同时覆盖 RedToGreen 与 GreenToRed（游戏中黄灯过渡）。
+        /// </summary>
         public string vehicleState { get; set; }
 
         /// <summary>机动车灯原始枚举值（Green=0, RedToGreen=1, Red=2, GreenToRed=3）。</summary>
@@ -101,7 +131,7 @@ namespace CSLModernMap.Traffic
     }
 
     /// <summary>
-    /// 单条道路段导出实体。几何/属性字段与 CSLModernMap CMM 对齐，分析软件可直接叠加。
+    /// 单条道路段导出实体。几何/属性字段与 CSLModernMap .mmap 对齐，分析软件可直接叠加。
     /// </summary>
     [Serializable]
     public class RoadSegmentExport
@@ -115,7 +145,11 @@ namespace CSLModernMap.Traffic
         /// <summary>终点节点（游戏世界坐标，米）。对应 NetManager.m_nodes[seg.m_endNode]。</summary>
         public Vec3 nodeB { get; set; }
 
-        /// <summary>贝塞尔曲线在 0.25、0.5、0.75 处的采样点；直线道路为空。</summary>
+        /// <summary>
+        /// 贝塞尔中间控制点（3 点，按 0.25 / 0.5 / 0.75 参数位置取）。
+        /// 直线道路（StartDirection == -EndDirection）时为 null（分析软件判定为 nodeA → nodeB 直线）。
+        /// 与 .mmap 文件同算法。
+        /// </summary>
         public List<Vec3> curvePoints { get; set; }
 
         /// <summary>道路资产名称（NetInfo.name，如 "Basic Road"、"HighwayRampElevated"）。</summary>
@@ -233,19 +267,44 @@ namespace CSLModernMap.Traffic
         /// 导航使用 network.car_speed 中以 m/s 记录的实际生效限速。</summary>
         public float maxSpeed { get; set; }
 
-        /// <summary>TM:PE meanSpeed / 10000，范围 [0,1]；非机动车道或无统计时为 -1。</summary>
+        /// <summary>
+        /// 相对平均车速（0.0 = 完全停止（拥堵），1.0 = 均速达到限速（畅通））。
+        ///   - 计算公式：relativeSpeed = clamp(0, 1, CalcLaneRelativeMeanSpeed(raw UInt16) / 10000.0f)
+        ///   - 数据来源：TMPE.ITrafficMeasurementManager.CalcLaneRelativeMeanSpeed(segId, laneIndex, laneId, laneInfo)
+        ///   - laneType≠Vehicle 或 无统计时写 -1
+        /// </summary>
         public float relativeSpeed { get; set; }
 
-        /// <summary>TM:PE maxTrafficBuffer 的窗口统计值，非瞬时车辆数；非机动车道为 0。</summary>
+        /// <summary>
+        /// 当前车道上的瞬时车辆数（从 NetLane 链表精确计数，不依赖 TMPE 的 maxTrafficBuffer 近似值）。
+        /// 非机动车道恒写 0。
+        /// </summary>
         public int vehicleCount { get; set; }
 
-        /// <summary>1 - relativeSpeed，范围 [0,1]；非机动车道或无统计时为 -1。</summary>
+        /// <summary>
+        /// 拥堵率（分析软件主色带字段，直接拿值映射颜色）：
+        ///   - 定义：congestion = 1.0 - relativeSpeed
+        ///   - 范围：
+        ///     • laneType != Vehicle:  -1.0  （表示此车道无交通统计意义，不参与色带）
+        ///     • 有 TMPE 统计的 Vehicle 车道:  [0.0, 1.0]
+        ///         0.0 完全畅通（relativeSpeed=1.0）
+        ///         0.5 半堵（relativeSpeed=0.5，比如平均速度仅限速的一半）
+        ///         1.0 完全堵死（relativeSpeed=0.0，车辆停止）
+        ///   - 推荐的分析软件色带（与 CSLModernMap 渲染端统一）：
+        ///     -1 → 灰色 / 不绘制；
+        ///     0 → 绿色；0.3 → 黄色；0.6 → 橙色；0.85 → 红色；1.0 → 深酒红。
+        /// </summary>
         public float congestion { get; set; }
 
         /// <summary>行驶方向（NetInfo.Lane.Direction 字符串化，与 laneDirection 字段相同值，保留以便 JSON 搜索）。</summary>
         public string tmpeDirection { get; set; }
 
-        /// <summary>0 表示有 TM:PE 窗口统计，1 表示尚无有效统计。</summary>
+        /// <summary>
+        /// 数据质量位：
+        ///   - 0 = 正常（TMPE 提供了滑动窗口统计值）
+        ///   - 1 = 降级（GetLaneTrafficData 返回 false，speed/relativeSpeed/congestion 全部走默认降级值）
+        /// 分析软件可以按此字段筛掉"刚加载还没统计积累"的异常车道。
+        /// </summary>
         public int dataQuality { get; set; }
 
         public LaneExport()
@@ -287,7 +346,7 @@ namespace CSLModernMap.Traffic
     }
 
     /// <summary>
-    /// 快照总览统计。
+    /// 快照总览统计。新增 KPI 全部直接返回给分析软件做总览面板（无需自行聚合）。
     /// </summary>
     [Serializable]
     public class SnapshotStats

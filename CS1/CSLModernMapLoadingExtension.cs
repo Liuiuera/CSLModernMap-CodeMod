@@ -2,7 +2,12 @@ using ICities;
 
 namespace CSLModernMap
 {
-    /// <summary>跟踪加载状态；基类负责重挂选项面板及显示更新通知。</summary>
+    /// <summary>
+    /// 跟踪游戏加载状态。
+    /// 派生 AlgernonCommons.LoadingBase：OnLevelLoaded 基类会在 LoadedActions 之后
+    /// 自动重挂选项面板事件钩子（进游戏后游戏会重置选项 UI，不重挂则游戏内看不到
+    /// 面板）并自动调用 WhatsNew.ShowWhatsNew()，因此这里不再手动触发更新通知。
+    /// </summary>
     public class CSLModernMapLoadingExtension : AlgernonCommons.LoadingBase<UI.CSLModernMapOptionsPanel>
     {
         public static bool IsLevelLoaded { get; private set; }

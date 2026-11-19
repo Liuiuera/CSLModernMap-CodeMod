@@ -20,7 +20,7 @@ using TrafficNs = global::CSLModernMap.Traffic;
 namespace CSLModernMap.Exporter
 {
     /// <summary>
-    /// 地图导出器：从游戏各管理器采集完整快照，映射并写入原生 cmm-v1。
+    /// 地图导出器：从游戏各管理器采集完整快照，映射并写入原生 cmm1.1。
     ///
     /// 本模块改编自 CSLMapView 4.4.7（Cities: Skylines 社区模组，原作者 kkshoko）。
     /// 沿用内容采集 DTO，生产导出不经过 XML 序列化。
@@ -55,7 +55,6 @@ namespace CSLModernMap.Exporter
         };
 
         public const int TERRAIN_RESOLUTION = 1081;
-        public const int RESOURCES_RESOLUTION = 512;
 
         // 状态标志位常量（对应游戏枚举位值）
         private const int FLAG_CREATED = 1;               // NetNode/NetSegment/Building/District Created
@@ -70,11 +69,17 @@ namespace CSLModernMap.Exporter
         /// <summary>输出目录。</summary>
         public string TargetDirectory { get; set; }
 
-        /// <summary>地图与内嵌交通快照共用的导出时间。</summary>
+        /// <summary>
+        /// 共享时间戳（可选）。
+        /// 设置后将使用该时间戳而非 DateTime.Now，
+        /// 用于地图导出与交通快照导出使用相同时间戳，便于外部程序自动配对。
+        /// </summary>
         public DateTime? SharedTimestamp { get; set; }
 
         internal MapSnapshot CapturedSnapshot { get; private set; }
         internal ExportSummary Summary { get; private set; }
+        internal Dictionary<string, byte[]> SatelliteLayers;
+        internal int SatelliteOutputSize;
 
         internal string WriteSnapshot(MapSnapshot snapshot, ExportProgress progress)
         {
@@ -84,13 +89,15 @@ namespace CSLModernMap.Exporter
             ExportStages.Report(progress, 60, "EXPORT_PROGRESS_MAPPING");
             var document = CmmMapper.Map(snapshot, progress);
             StringBuilder warnings = new StringBuilder();
+            StringBuilder information = new StringBuilder();
             foreach (JToken issue in (JArray)document["issues"])
-                warnings.AppendLine((string)issue["code"] + ": " + (string)issue["message"]);
+                (ExportSummary.IsWarning(issue) ? warnings : information).AppendLine((string)issue["code"] + ": " + (string)issue["message"]);
+            if (information.Length > 0) Debug.Log("[CSLModernMap] Export information:\n" + information);
             if (warnings.Length > 0) Debug.LogWarning("[CSLModernMap] Export warnings:\n" + warnings);
             string fileName = SanitizeFileName(snapshot.City);
             fileName += SharedTimestamp.Value.ToString("-yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
-            string path = Path.Combine(TargetDirectory, fileName + ".cmm.gz");
-            string result = CmmWriter.Write(document, path, true, progress);
+            string path = Path.Combine(TargetDirectory, fileName + ".cmm");
+            string result = CmmWriter.Write(document, path, true, progress, SatelliteLayers, SatelliteOutputSize);
             Summary = ExportSummary.FromDocument(document, result, SharedTimestamp.Value);
             Debug.Log("[CSLModernMap] Native CMM exported: " + result);
             return result;
@@ -104,7 +111,6 @@ namespace CSLModernMap.Exporter
             BuildingManager buildingManager = Singleton<BuildingManager>.instance;
             DistrictManager districtManager = Singleton<DistrictManager>.instance;
             TransportManager transportManager = Singleton<TransportManager>.instance;
-            NaturalResourceManager naturalResourceManager = Singleton<NaturalResourceManager>.instance;
             PathManager pathManager = Singleton<PathManager>.instance;
 
             _nodeDict.Clear();
@@ -114,6 +120,7 @@ namespace CSLModernMap.Exporter
 
             MapSnapshot xml = new MapSnapshot();
             xml.SimulationPaused = simulationPaused;
+            xml.FileVersion = CSLExportXML.CURRENT_VERSION;
             xml.City = string.IsNullOrEmpty(cityName) ? "Unknown" : cityName;
             xml.Generated = sharedTs.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
             xml.MapTileGrid = new XMLMapTileGrid
@@ -144,13 +151,19 @@ namespace CSLModernMap.Exporter
             }
             ExportStages.Report(progress, 32, "EXPORT_PROGRESS_TRANSIT"); yield return null;
             CaptureLayer(xml, "Transport lines", delegate { ExportTransports(xml, transportManager); });
-            ExportStages.Report(progress, 34, "EXPORT_PROGRESS_FORESTS"); yield return null;
-            CaptureLayer(xml, "Forests", delegate { ExportForests(xml, naturalResourceManager); });
             ExportStages.Report(progress, 36, "EXPORT_PROGRESS_OBJECTS"); yield return null;
             // Keep the optional PO assembly outside the distribution.
             try
             {
                 ExportProceduralObjects(xml);
+            }
+            catch (FileNotFoundException ex)
+            {
+                xml.Information.Add("Procedural objects unavailable: " + ex.Message);
+            }
+            catch (TypeLoadException ex)
+            {
+                xml.Information.Add("Procedural objects unavailable: " + ex.Message);
             }
             catch (Exception ex)
             {
@@ -239,7 +252,7 @@ namespace CSLModernMap.Exporter
                         xn.UnderGround = HasFlag((int)node.m_flags, FLAG_UNDERGROUND);
                         xn.OnGround = HasFlag((int)node.m_flags, FLAG_ON_GROUND);
                         NetInfo info = node.Info;
-                        if (info == null) xml.Problems.Add("Node " + i + " service omitted: network prefab missing; position and connectivity retained.");
+                        if (info == null) xml.Information.Add("Node " + i + " service omitted: network prefab missing; position and connectivity retained.");
                         else xn.SubService = info.GetSubService().ToString();
                         xml.NodeList.Add(xn);
                         _nodeDict.Add(i, xn);
@@ -252,9 +265,6 @@ namespace CSLModernMap.Exporter
 
         private IEnumerator ExportSegments(MapSnapshot xml, NetManager netManager, PathManager pathManager, ExportProgress progress)
         {
-            bool pathsReady = false;
-            try { pathManager.WaitForAllPaths(); pathsReady = true; }
-            catch (Exception ex) { Warn(xml, "Transit paths omitted; path calculation could not finish", ex); }
             NetNode[] nodes = netManager.m_nodes.m_buffer;
             NetSegment[] buffer = netManager.m_segments.m_buffer;
             Stopwatch slice = Stopwatch.StartNew();
@@ -321,7 +331,10 @@ namespace CSLModernMap.Exporter
                         Warn(xml, "Segment " + i + " derived tracks omitted; road retained", ex);
                     }
 
-                    if (seg.m_path != 0 && pathsReady)
+                    // The global pathfinder wait can block the main capture coroutine while the
+                    // simulation thread is held. Read only the already assigned chain and fall
+                    // back to STOP_DIRECT geometry when it is unavailable.
+                    if (seg.m_path != 0)
                     {
                         try
                         {
@@ -434,8 +447,7 @@ namespace CSLModernMap.Exporter
                     }
                     else
                     {
-                        Warn(xml, "Building " + i + " height omitted: missing or invalid model bounds",
-                            new InvalidOperationException("Invalid building vertical bounds"));
+                        xml.Information.Add("Building " + i + " height omitted: missing or invalid model bounds; building footprint retained.");
                     }
                     xb.Points.Add(ToXML(position - width / 2f * dir - length / 2f * normal));
                     xb.Points.Add(ToXML(position + width / 2f * dir - length / 2f * normal));
@@ -466,7 +478,7 @@ namespace CSLModernMap.Exporter
                     xb.SubService = info.GetSubService().ToString();
                     xb.ItemClass = info.m_class.name;
                     try { ReadBuildingCategory(xb, info); }
-                    catch (Exception ex) { Warn(xml, "Building " + i + " category label omitted; building retained", ex); }
+                    catch (Exception ex) { xml.Information.Add("Building " + i + " category label omitted; building retained: " + ex.GetType().Name + ": " + ex.Message); }
 
                     if (building.m_subBuilding != 0)
                     {
@@ -562,10 +574,6 @@ namespace CSLModernMap.Exporter
             building.CategoryLocale = ColossalFramework.Globalization.LocaleManager.instance.language;
             building.CategoryName = ColossalFramework.Globalization.Locale.Exists(table, key)
                 ? ColossalFramework.Globalization.Locale.Get(table, key) : "";
-            if (String.IsNullOrEmpty(building.CategoryName) || String.IsNullOrEmpty(building.CategoryLocale))
-                Debug.LogWarning("[CSLModernMapExporter] Building " + building.Id
-                    + " has no official category localization: " + building.CategoryId
-                    + "; its category label will be omitted.");
         }
 
 
@@ -593,9 +601,26 @@ namespace CSLModernMap.Exporter
             }
         }
 
-        // 网格采样点为单元中心，归属通过游戏 API 读取。
+        /// <summary>
+        /// 区划网格导出：采样游戏区划归属网格，输出各区划的格点列表。
+        ///
+        /// 背景：CSLMapView 原版只导出区划名称定位点（m_nameLocation），
+        /// XML 中没有区划边界，Python 端无法绘制行政区划边界。
+        /// 本方法通过游戏官方 API DistrictManager.SampleDistrict 逐格采样
+        /// 世界坐标，输出 "cell=96;x,z,id;x,z,id;..." 文本，Python 端据此
+        /// 重建每个区划的边界多边形。
+        ///
+        /// 说明：网格分辨率取 m_districtGrid.Length 的开方（游戏内部区划
+        /// 网格边长），采样点为每格中心世界坐标；值为 0 的格子（无区划）
+        /// 跳过。单次导出约 n² 次采样调用，游戏暂停时执行，耗时可忽略。
+        /// </summary>
 
-        // 使用自定义委托，避免引入不兼容 CS1 运行时的框架类型。
+        // 注意：通用网格导出的回调**不能用 System.Func<,>/Action<>**——
+        // 它们是 .NET 4.0 API（在 .NET 4 里位于 mscorlib 4.0.0.0），而 CS1 运行在
+        // .NET 3.5（mscorlib 2.0.0.0，Func<>/Action<> 在 System.Core.dll）。
+        // build.cmd 用 csc 4.0 编译会把它们绑定到 mscorlib 4.0.0.0，游戏加载时抛
+        // TypeLoadException: Could not load type 'System.Func`2' from 'mscorlib, Version=4.0.0.0'。
+        // 一律改用自定义委托（.NET 3.5 完全支持 delegate）。
         private delegate byte ZoneSampler(Vector3 pos);
         private delegate bool ZonePredicate(byte id);
         private delegate void ZoneSetter(string value);
@@ -625,8 +650,14 @@ namespace CSLModernMap.Exporter
         }
 
         /// <summary>
-        /// 由网格长度推断分辨率，通过 sampler 读取归属，避免绑定游戏网格元素类型。
-        /// setter 接收 cell=..;x,z,id;... 格式的采样结果。
+        /// 通用区划/功能区网格导出。
+        ///
+        /// grid：游戏的区划归属网格（m_districtGrid）。注：不同游戏版本元素
+        /// 类型不同（byte[] 或 DistrictManager.Cell[]），这里只取 Length 推断
+        /// 网格分辨率，格点归属一律用 sampler 回调（官方 API）采样，避免类型差异。
+        /// sampler：世界坐标 → 区划/公园 id。
+        /// isValid：id 是否为有效（已创建）实体。
+        /// setter：把生成的 "cell=..;x,z,id;..." 文本写入 XML 字段。
         /// </summary>
         private void ExportZoneGrid(MapSnapshot xml, string context, Array grid,
             ZoneSampler sampler, ZonePredicate isValid,
@@ -682,13 +713,12 @@ namespace CSLModernMap.Exporter
 
         /// <summary>
         /// 判断区划 id 是否为已创建的有效区划。
-        /// SampleDistrict 返回 0 可能表示"无区划"，但默认区划 id 也是 0，
-        /// 因此用 m_districts 缓冲区的 flags 判定，避免 0 语义歧义。
+        /// 默认区划 id 0 不参与制图，不导出其背景格点。
         /// </summary>
         private bool IsCreatedDistrict(DistrictManager districtManager, byte districtId)
         {
             District[] buffer = districtManager.m_districts.m_buffer;
-            if (districtId >= buffer.Length)
+            if (districtId == 0 || districtId >= buffer.Length)
             {
                 return false;
             }
@@ -701,11 +731,12 @@ namespace CSLModernMap.Exporter
         private bool IsCreatedPark(DistrictManager districtManager, byte parkId)
         {
             DistrictPark[] buffer = districtManager.m_parks.m_buffer;
-            if (parkId >= buffer.Length)
+            if (parkId == 0 || parkId >= buffer.Length)
             {
                 return false;
             }
-            return HasFlag((int)buffer[parkId].m_flags, FLAG_CREATED);
+            return HasFlag((int)buffer[parkId].m_flags, FLAG_CREATED)
+                && buffer[parkId].m_parkType != DistrictPark.ParkType.None;
         }
 
         private void ExportParks(MapSnapshot xml, DistrictManager districtManager)
@@ -765,26 +796,6 @@ namespace CSLModernMap.Exporter
             }
         }
 
-
-        private void ExportForests(CSLExportXML xml, NaturalResourceManager nrManager)
-        {
-            var resources = nrManager.m_naturalResources;
-            List<string> rows = new List<string>();
-            for (int i = 0; i < RESOURCES_RESOLUTION; i++)
-            {
-                StringBuilder sb = new StringBuilder(RESOURCES_RESOLUTION * 4);
-                for (int j = 0; j < RESOURCES_RESOLUTION; j++)
-                {
-                    if (j > 0)
-                    {
-                        sb.Append(',');
-                    }
-                    sb.Append(resources[i * RESOURCES_RESOLUTION + j].m_tree);
-                }
-                rows.Add(sb.ToString());
-            }
-            xml.ForestList = rows;
-        }
 
         private void ExportProceduralObjects(MapSnapshot snapshot)
         {

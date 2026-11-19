@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Threading;
 using ColossalFramework;
@@ -17,7 +17,8 @@ namespace CSLModernMap.UI
         private ExportProgress progress;
         private ExportCompleted completion;
         private SimulationManager simulation;
-        private bool previousForcedPause, previousPause, ownsPause;
+        private bool previousForcedPause, previousPause;
+        private volatile bool ownsPause;
         private volatile bool workerDone;
         private SimulationCaptureGate captureGate;
         private Exception failure;
@@ -36,9 +37,17 @@ namespace CSLModernMap.UI
                 runner.previousPause = runner.simulation.SimulationPaused;
                 runner.previousForcedPause = runner.simulation.ForcedSimulationPaused;
                 runner.ownsPause = true;
-                runner.simulation.ForcedSimulationPaused = true;
-                // Wait for the active simulation step to finish before reading a stable snapshot.
-                runner.simulation.AddAction(SimulationBarrier(runner.captureGate));
+                // Paused simulations do not advance AddAction queues.
+                if (runner.previousPause || runner.previousForcedPause)
+                {
+                    runner.captureGate.StartImmediately();
+                }
+                else
+                {
+                    // Queue while running. The barrier pauses from the simulation thread, after
+                    // the active step has completed.
+                    runner.simulation.AddAction(runner.SimulationBarrier(runner.captureGate));
+                }
                 runner.StartCoroutine(runner.Capture());
             }
             catch (Exception ex) { runner.RestorePause(); runner.failure = ex; runner.Finish(); }
@@ -55,11 +64,21 @@ namespace CSLModernMap.UI
             return instance;
         }
 
-        private static IEnumerator SimulationBarrier(SimulationCaptureGate gate)
-        { gate.Hold(); yield break; }
+        private IEnumerator SimulationBarrier(SimulationCaptureGate gate)
+        {
+            if (!ownsPause || gate.Cancelled) yield break;
+            simulation.ForcedSimulationPaused = true;
+            if (!ownsPause || gate.Cancelled)
+            {
+                simulation.ForcedSimulationPaused = previousForcedPause;
+                yield break;
+            }
+            gate.Hold();
+        }
 
         internal static void CancelCapture()
         {
+            SatelliteExport.Cancel();
             if (instance == null || instance.exporter == null || instance.writing) return;
             instance.failure = new InvalidOperationException("City unloaded during capture");
             instance.StopAllCoroutines();
@@ -73,18 +92,34 @@ namespace CSLModernMap.UI
             try
             {
                 float started = Time.realtimeSinceStartup;
+                bool waitingHintShown = false;
                 while (!captureGate.Ready && CSLModernMapLoadingExtension.IsLevelLoaded)
                 {
-                    if (Time.realtimeSinceStartup - started > 15f)
-                    { failure = new TimeoutException("Simulation did not reach the export boundary"); break; }
+                    if (!waitingHintShown && Time.realtimeSinceStartup - started >= 15f)
+                    {
+                        waitingHintShown = true;
+                        ExportActions.ShowExportProgressHint("EXPORT_PROGRESS_WAITING_CONTINUE");
+                    }
                     yield return null;
                 }
                 if (failure == null && !CSLModernMapLoadingExtension.IsLevelLoaded)
                     failure = new InvalidOperationException("City unloaded before capture");
                 if (failure != null) yield break;
                 capture = exporter.CaptureSteps(previousPause, progress);
-                while (CSLModernMapLoadingExtension.IsLevelLoaded && Advance(capture)) yield return null;
-                if (captureGate.TimedOut) failure = new TimeoutException("City capture exceeded the simulation hold limit");
+                float captureStarted = Time.realtimeSinceStartup;
+                bool captureHintShown = false;
+                while (CSLModernMapLoadingExtension.IsLevelLoaded)
+                {
+                    bool advanced = Advance(capture);
+                    if (advanced && !captureHintShown
+                        && Time.realtimeSinceStartup - captureStarted >= 30f)
+                    {
+                        captureHintShown = true;
+                        ExportActions.ShowExportProgressHint("EXPORT_PROGRESS_CAPTURE_CONTINUE");
+                    }
+                    if (!advanced) break;
+                    yield return null;
+                }
                 if (!CSLModernMapLoadingExtension.IsLevelLoaded)
                     failure = new InvalidOperationException("City unloaded during capture");
                 if (failure != null) yield break;
@@ -102,8 +137,6 @@ namespace CSLModernMap.UI
 
         private bool Advance(IEnumerator capture)
         {
-            if (captureGate.TimedOut)
-            { failure = new TimeoutException("City capture exceeded the simulation hold limit"); return false; }
             try { return capture.MoveNext(); }
             catch (Exception ex) { failure = ex; return false; }
         }
@@ -149,6 +182,7 @@ namespace CSLModernMap.UI
 
         public void OnDestroy()
         {
+            SatelliteExport.Cancel();
             RestorePause();
         }
     }

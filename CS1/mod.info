@@ -14,11 +14,11 @@
     583429760 = 旧版 TM:PE v10（已废弃，不需要兼容）
 -->
 <ModInfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-  <Name>CSLModernMap（地图导出）v6.7.3f1</Name>
-  <DisplayName>CSLModernMap（地图导出）v6.7.3f1</DisplayName>
-  <Version>6.7.3f1</Version>
+  <Name>CSLModernMap（地图导出）v6.7.4</Name>
+  <DisplayName>CSLModernMap（地图导出）v6.7.4</DisplayName>
+  <Version>6.7.4</Version>
   <Author>少糖烧仙草</Author>
-  <Description>导出城市地图并一键渲染现代风格地图图片（Export your city map and render modern-style map images）. v6.7.3f1</Description>
+  <Description>导出城市地图并一键渲染现代风格地图图片（Export your city map and render modern-style map images）. v6.7.4</Description>
 
   <!-- 软依赖 TM:PE v11 STABLE -->
   <softDependency>1637663252</softDependency>

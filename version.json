@@ -1,0 +1,7 @@
+{
+  "version": "6.7.4",
+  "changenote": "v6.7.4\n1. Both game exporters offer optional satellite imagery, off by default, with a reminder to save the city before capture.\n2. Edit map drafts and personal themes, then export the current draft as a PNG.\n3. Updated viewer translations and fixed a theme editing error when entering a road width of zero.",
+  "changenote_en": "v6.7.4\n1. Both game exporters offer optional satellite imagery, off by default, with a reminder to save the city before capture.\n2. Edit map drafts and personal themes, then export the current draft as a PNG.\n3. Updated viewer translations and fixed a theme editing error when entering a road width of zero.",
+  "changenote_zh": "v6.7.4\n1. 两代游戏均可选择导出卫星图，默认关闭；开启时提醒先保存城市。\n2. 可编辑地图草稿和个人主题，并将当前草稿导出为 PNG。\n3. 补齐查看器多语言文案，修复输入零道路线宽后无法继续编辑主题的问题。",
+  "assembly_version": "6.7.4.0"
+}

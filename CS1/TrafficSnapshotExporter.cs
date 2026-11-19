@@ -8,7 +8,17 @@ using UnityEngine;
 
 namespace CSLModernMap.Traffic
 {
-    /// <summary>读取 TM:PE 车道统计，生成内嵌 CMM 的交通快照 JSON。</summary>
+    /// <summary>
+    /// 交通快照导出器：仅在用户点击按钮时执行一次性导出（不进入 Update 循环）。
+    ///
+    /// ExportToJson 返回紧凑 JSON，由地图导出器写入原生 CMM。
+    ///
+    /// v1.1 数据来源（强引用 TMPE v11 STABLE）：
+    ///   speed         : ITrafficMeasurementManager.GetLaneTrafficData(...).meanSpeed / 10000 → relativeSpeed
+    ///   maxSpeed      : 旧字段保留 NetInfo.Lane.m_speedLimit 游戏单位（1 = 50 km/h）
+    ///   vehicleCount  : TMPE LaneTrafficData.maxTrafficBuffer
+    ///   congestion    : 1 - relativeSpeed，自动 clip [0, 1]；无数据时为 -1
+    /// </summary>
     public class TrafficSnapshotExporter
     {
         private const int FLAG_CREATED = 1;
@@ -29,14 +39,20 @@ namespace CSLModernMap.Traffic
             @"^(.* Road|Highway|.* Road Ramp|.* Road Decor|Zoned Road)$",
             RegexOptions.Compiled | RegexOptions.Singleline);
 
-        /// <summary>与地图导出共用的时间，写入快照时转为 UTC。</summary>
+        /// <summary>
+        /// 共享时间戳（可选）。
+        /// 设置后将使用该时间戳而非 DateTime.Now，
+        /// 用于与地图导出使用相同时间戳，便于外部程序自动配对。
+        /// SharedTimestamp.UTC 用于 snapshot.timestamp (ISO 8601)。
+        /// </summary>
         public DateTime? SharedTimestamp { get; set; }
         internal bool? SimulationPausedOverride { get; set; }
 
         public Dictionary<int, List<global::CSLModernMap.Export.XMLVector3>> RoadGeometry { get; set; }
 
+        // ============================================================
         // City-wide 聚合累加器（在遍历所有 segment/lanes 过程中持续 +=）
-
+        // ============================================================
         private class CityAccumulator
         {
             public float sumWidthTimesCongestion;   // Σ width × congestion（仅 Vehicle 车道）
@@ -48,8 +64,9 @@ namespace CSLModernMap.Traffic
             public int   countNoTmpeStats;          // 无 TM:PE 统计的 Vehicle 车道数
         }
 
+        // ============================================================
         // 核心：构建 TrafficSnapshotExport 对象（不写文件 / 不序列化）
-
+        // ============================================================
 
         /// <summary>
         /// 构建交通快照数据对象（不进行任何 IO）。
@@ -62,6 +79,7 @@ namespace CSLModernMap.Traffic
             simulationPausedFlag = false;
             errorMessage = null;
 
+            // ========== 1) 前置校验 ==========
             if (!CSLModernMapLoadingExtension.IsLevelLoaded)
             {
                 errorMessage = "尚未加载游戏存档，无法导出交通快照。";
@@ -81,6 +99,7 @@ namespace CSLModernMap.Traffic
             bool paused = SimulationPausedOverride ?? sim.SimulationPaused;
             simulationPausedFlag = paused;
 
+            // ========== 2) 准备导出容器 ==========
             TrafficSnapshotExport snapshot = new TrafficSnapshotExport();
             snapshot.cityName = (sim.m_metaData != null && !string.IsNullOrEmpty(sim.m_metaData.m_CityName))
                 ? sim.m_metaData.m_CityName
@@ -94,8 +113,10 @@ namespace CSLModernMap.Traffic
             snapshot.simulationPaused = paused;
             snapshot.stats.tmpeAvailable = true;
 
+            // ========== 3) 准备 city-level 聚合累加器 ==========
             CityAccumulator cityAcc = new CityAccumulator();
 
+            // ========== 4) 遍历 NetSegment ==========
             NetSegment[] segBuffer = netManager.m_segments.m_buffer;
             NetNode[] nodeBuffer = netManager.m_nodes.m_buffer;
             NetLane[] laneBuffer = netManager.m_lanes.m_buffer;
@@ -129,7 +150,7 @@ namespace CSLModernMap.Traffic
                     snapshot.stats.skippedSegments++; continue;
                 }
 
-                // 直接读取 TM:PE 路段信息。
+                // ---- 强引用 TMPE: 直接拿 segment 信息（无 GC 装箱） ----
                 uint[] tmpeLaneIds;   // 可能 null
                 bool oneWay, highway, buslane;
                 bool tmpeValid = TMPEBridge.TryGetSegmentInfo(i, out tmpeLaneIds, out oneWay, out highway, out buslane);
@@ -144,6 +165,7 @@ namespace CSLModernMap.Traffic
                     continue;
                 }
 
+                // ========== 5) 组装 RoadSegmentExport（几何 + 属性） ==========
                 RoadSegmentExport rse = new RoadSegmentExport();
                 rse.segmentId = i;
                 rse.nodeA = new Vec3(startNode.m_position.x, startNode.m_position.y, startNode.m_position.z);
@@ -166,6 +188,7 @@ namespace CSLModernMap.Traffic
                 int   segTotalVeh = 0;
                 float segSumWtRS = 0f;
 
+                // ========== 6) 逐车道组装 LaneExport ==========
                 for (int li = 0; li < laneNum; li++)
                 {
                     NetInfo.Lane lane = netLanes[li];
@@ -238,6 +261,7 @@ namespace CSLModernMap.Traffic
                     snapshot.stats.totalLanes++;
                 }
 
+                // ========== 7) 写入 RoadSegmentAggStats ==========
                 rse.segStats.totalLanes = rse.lanes.Count;
                 rse.segStats.vehicleLanes = segVehLanes;
                 rse.segStats.totalVehicles = segTotalVeh;
@@ -261,6 +285,7 @@ namespace CSLModernMap.Traffic
                 snapshot.stats.exportedSegments++;
             }
 
+            // ========== 7.5) 红绿灯节点采集（schema v1.2，游戏本体 API，不依赖 TM:PE） ==========
             // 数据来源：
             //   - NetNode.Flags.TrafficLights       -> 该节点有红绿灯
             //   - NetNode.Flags.CustomTrafficLights -> 自定义灯组（通常 = TM:PE 接管）
@@ -317,6 +342,7 @@ namespace CSLModernMap.Traffic
                 snapshot.stats.lightNodes++;
             }
 
+            // ========== 8) 写入 SnapshotStats city-level KPI ==========
             snapshot.stats.totalVehicleLanes          = cityAcc.countVehicleLanes + cityAcc.countNoTmpeStats;
             snapshot.stats.cityTotalVehicles          = cityAcc.sumVehicles;
             snapshot.stats.vehicleLanesNoTmpeStats    = cityAcc.countNoTmpeStats;
@@ -340,10 +366,15 @@ namespace CSLModernMap.Traffic
             return snapshot;
         }
 
+        // ============================================================
         // 导出紧凑 JSON 字符串（供 CSLModernMapExporter 内嵌到 CMM）
+        // ============================================================
 
-
-        /// <summary>返回内嵌快照 JSON；失败时返回 null 并输出错误原因。</summary>
+        /// <summary>
+        /// 构建交通快照并序列化为 JSON 字符串。
+        /// 失败时返回 null，通过 errorMessage 输出原因。
+        /// 不进行暂停弹窗（内嵌于地图导出时由调用方决定是否继续）。
+        /// </summary>
         public string ExportToJson(out string errorMessage, out bool simulationPaused)
         {
             errorMessage = null;
@@ -364,6 +395,7 @@ namespace CSLModernMap.Traffic
             }
         }
 
+        // ---------- 辅助 ----------
 
         private static bool HasFlag(int flags, int flag)
         {

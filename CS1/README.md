@@ -20,5 +20,4 @@ archive, compiles the net35 profile, privately merges it and validates the resul
 Use `bin/private/CSLModernMap.dll` together with its `.verified.json` report.
 
 Viewer payloads are not included in the source repository. Official release
-packages supply `CSLModernMapRenderer.cslmr`, its SHA-256 file and
-`renderer-version.txt` separately.
+packages supply `CSLModernMapRenderer.zip` and its SHA-256 file separately.

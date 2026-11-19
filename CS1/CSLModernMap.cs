@@ -10,10 +10,19 @@ using ICities;
 
 namespace CSLModernMap
 {
-    /// <summary>通过 AlgernonCommons 管理设置、选项面板及更新通知。</summary>
+    /// <summary>
+    /// CSLModernMap 模组入口。
+    /// 派生 AlgernonCommons.OptionsMod&lt;CSLModernMapOptionsPanel&gt;（源码共享编入，MIT 许可，
+    /// 见 AlgernonCommons/LICENSE.txt）：
+    ///   - ModBase 链路：设置持久化 + WhatsNew 更新通知体系（UIView.PushModal
+    ///     正确接管模态输入，交互可靠）；LoadSettings 必须先于进档时的
+    ///     ShowWhatsNew 执行，由 OnEnabled 基类链路完成；
+    ///   - OptionsMod 链路：实现 OnSettingsUI 并在 OnEnabled 挂接选项面板事件钩子；
+    ///     进档后的重挂与 WhatsNew 触发由 LoadingBase 派生的加载扩展完成。
+    /// </summary>
     public class CSLModernMap : OptionsMod<global::CSLModernMap.UI.CSLModernMapOptionsPanel>, IUserMod
     {
-        public const string MOD_VERSION = "6.7.3f1";
+        public const string MOD_VERSION = "6.7.4";
 
         // Content Manager cannot initialize AlgernonCommons while enumerating plugins.
         private static readonly ResourceManager ChineseMetadata = new ResourceManager(
@@ -47,7 +56,11 @@ namespace CSLModernMap
             MetadataCatalog(GameLanguage).GetString(key);
 
 
-        /// <summary>枚举模组期间避免初始化翻译系统，以免重入 PluginManager。</summary>
+        /// <summary>
+        /// Content Manager 会在 PluginManager 枚举 Mod 时读取 Name/Description；这里绝不能
+        /// 初始化完整翻译系统，否则会重入 PluginManager。LocaleManager 未就绪或读取失败时
+        /// 安全回退英文。
+        /// </summary>
         private static string GameLanguage
         {
             get
@@ -135,7 +148,10 @@ namespace CSLModernMap
             }
         }
 
-        /// <summary>保存设置及更新通知状态。</summary>
+        /// <summary>
+        /// 保存设置（WhatsNew「不再显示」按钮与选项面板关闭时都会回调到这里）。
+        /// 幂等轻量：仅把当前全局设置状态写回 XML 文件，无其他副作用。
+        /// </summary>
         public override void SaveSettings() => XMLFileUtils.Save<CSLModernMapConfig>(CSLModernMapConfig.SettingsFileName);
     }
 }

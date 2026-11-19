@@ -14,7 +14,9 @@ namespace CSLModernMap.Systems
 
         internal const string RendererFolderName = "Renderer";
 
-        internal const string FileSuffix = ".cmm.gz";
+        private const string FileSuffix = ".cmm";
+
+        private const string LegacyFileSuffix = ".cmm.gz";
 
         internal static string ExportDirectory
         {
@@ -85,8 +87,11 @@ namespace CSLModernMap.Systems
                 }
 
                 FileInfo newest = null;
-                foreach (var file in directory.GetFiles("*" + FileSuffix))
+                foreach (var file in directory.EnumerateFiles())
                 {
+                    if (!file.Name.EndsWith(FileSuffix, StringComparison.OrdinalIgnoreCase)
+                        && !file.Name.EndsWith(LegacyFileSuffix, StringComparison.OrdinalIgnoreCase))
+                        continue;
                     if (newest == null || file.LastWriteTimeUtc > newest.LastWriteTimeUtc)
                     {
                         newest = file;

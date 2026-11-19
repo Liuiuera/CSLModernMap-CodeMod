@@ -419,13 +419,14 @@ namespace CSLModernMap.Systems
                             continue;
                         }
 
-                        stopIds.Add(connected.Index);
-                        stopWaypoints.Add(w);
                         if (!stopById.ContainsKey(connected.Index))
                         {
-                            issues.Error("TRANSIT_ROUTE_STOP_UNRESOLVED",
-                                "Line " + entity.Index + ", waypoint " + w + ": stop " + connected.Index + " 未导出");
+                            issues.WarnGrouped("TRANSIT_ROUTE_STOP_UNRESOLVED", "线路停靠点未导出，已跳过引用",
+                                "Line " + entity.Index + ", waypoint " + w + ": stop " + connected.Index);
+                            continue;
                         }
+                        stopIds.Add(connected.Index);
+                        stopWaypoints.Add(w);
                     }
 
                     var pathSegmentIds = new List<int>();
@@ -434,8 +435,20 @@ namespace CSLModernMap.Systems
                     for (var s = 0; s < segments.Length; s++)
                     {
                         var segment = segments[s].m_Segment;
+                        if (!em.HasComponent<Game.Routes.Segment>(segment))
+                        {
+                            issues.WarnGrouped("TRANSIT_SEGMENT_MISSING", "线路路段引用不可读取，已跳过",
+                                "Line " + entity.Index + ", segment " + segment.Index);
+                            continue;
+                        }
                         // Segment.m_Index 对应原始 waypoint，不能使用过滤后的停靠下标。
                         var index = em.GetComponentData<Game.Routes.Segment>(segment).m_Index;
+                        if (sourceSegments.ContainsKey(index))
+                        {
+                            issues.WarnGrouped("TRANSIT_SEGMENT_DUPLICATE", "线路路段索引重复，保留首个路段",
+                                "Line " + entity.Index + ", waypoint " + index);
+                            continue;
+                        }
                         sourceSegments.Add(index, segment);
                     }
 
@@ -455,7 +468,16 @@ namespace CSLModernMap.Systems
                                     + ", waypoint " + index + ": 缺少线路路段");
                                 continue;
                             }
-                            legIds.AddRange(ReadRoutePath(em, segment, transitKind, derived, issues));
+                            try
+                            {
+                                legIds.AddRange(ReadRoutePath(em, segment, transitKind, derived, issues));
+                            }
+                            catch (Exception e) when (e is ArgumentException
+                                || e is InvalidOperationException || e is IndexOutOfRangeException)
+                            {
+                                issues.WarnGrouped("TRANSIT_PATH_UNAVAILABLE", "线路路段路径无法读取，已跳过",
+                                    "Line " + entity.Index + ", segment " + segment.Index + ": " + e.Message);
+                            }
                         }
                         pathSegmentIds.AddRange(legIds);
                         if (legsJson.Length > 0) legsJson.Append(", ");
@@ -657,7 +679,6 @@ namespace CSLModernMap.Systems
             catch (Exception e)
             {
                 Mod.log.Warn("[transit] 站点名解析失败: " + e.GetType().Name + ": " + e.Message);
-                throw;
             }
         }
 
@@ -684,7 +705,6 @@ namespace CSLModernMap.Systems
                 catch (Exception e)
                 {
                     Mod.log.Warn("[transit] 线路自定义名读取失败: " + e.GetType().Name + ": " + e.Message);
-                    throw;
                 }
             }
 
@@ -710,7 +730,6 @@ namespace CSLModernMap.Systems
             catch (Exception e)
             {
                 Mod.log.Warn("[transit] 线路名翻译读取失败: " + e.GetType().Name + ": " + e.Message);
-                throw;
             }
         }
 

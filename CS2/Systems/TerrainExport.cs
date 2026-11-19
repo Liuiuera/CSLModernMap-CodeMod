@@ -27,10 +27,29 @@ namespace CSLModernMap.Systems
             internal int Cols;
         }
 
-        internal static Result Build(World world)
+        internal static Result Build(World world, bool includeOutside)
         {
             var issues = new CmmIssueCollector();
+            Result result;
+            try
+            {
+                result = BuildTerrain(world, issues, includeOutside);
+            }
+            catch (Exception e) when (e is InvalidDataException || e is ArgumentException
+                || e is InvalidOperationException || e is IndexOutOfRangeException)
+            {
+                issues.Warn("TERRAIN_UNAVAILABLE", "地形无法读取，已省略: " + e.Message);
+                result = new Result { Json = "{}" };
+            }
 
+            result.Issues = issues.ToJson();
+            result.IssueCount = issues.Count;
+            result.FirstIssue = issues.First;
+            return result;
+        }
+
+        private static Result BuildTerrain(World world, CmmIssueCollector issues, bool allowOutside)
+        {
             var terrain = world.GetExistingSystemManaged<TerrainSystem>();
             if (terrain == null)
             {
@@ -38,21 +57,20 @@ namespace CSLModernMap.Systems
             }
 
             var data = terrain.GetHeightData(true);
-            var includeOutside = data.hasBackdrop && data.downscaledHeights.IsCreated
+            var includeOutside = allowOutside && data.hasBackdrop && data.downscaledHeights.IsCreated
                 && data.downscaledHeights.Length > 0;
 
             if (!data.isCreated || !data.heights.IsCreated || data.heights.Length == 0)
             {
                 throw new InvalidDataException("TerrainHeightData不可用");
             }
+            if (allowOutside && !includeOutside)
+            {
+                issues.Warn("TERRAIN_OUTSIDE_UNAVAILABLE", "外围地形数据不可用，已使用主体地形范围");
+            }
 
             var srcCols = data.resolution.x;
             var srcRows = data.resolution.z;
-            if ((long)srcCols * srcRows != data.heights.Length)
-            {
-                throw new InvalidDataException("TerrainHeightData的分辨率与高度数据长度不一致");
-            }
-
             var srcCellX = data.scale.x != 0f ? 1f / data.scale.x : 0f;
             var srcCellZ = data.scale.z != 0f ? 1f / data.scale.z : 0f;
             if (srcCellX <= 0f || srcCellZ <= 0f || srcCols <= 0 || srcRows <= 0)
@@ -71,17 +89,25 @@ namespace CSLModernMap.Systems
             {
                 var worldSize = terrain.worldSize;
                 var worldOrigin = terrain.worldOffset;
+                var outsideCols = Math.Round(1024d * worldSize.x / spanX);
+                var outsideRows = Math.Round(1024d * worldSize.y / spanZ);
                 if (worldSize.x <= 0 || worldSize.y <= 0
-                    || !math.all(math.isfinite(worldSize)) || !math.all(math.isfinite(worldOrigin)))
-                    throw new InvalidDataException("Invalid surrounding terrain bounds.");
-                cols = (int)Math.Round(1024d * worldSize.x / spanX);
-                rows = (int)Math.Round(1024d * worldSize.y / spanZ);
-                if (cols < 1 || rows < 1 || cols > 8192 || rows > 8192)
-                    throw new InvalidDataException("Surrounding terrain grid is too large.");
-                spanX = worldSize.x;
-                spanZ = worldSize.y;
-                originX = worldOrigin.x;
-                originZ = worldOrigin.y;
+                    || !math.all(math.isfinite(worldSize)) || !math.all(math.isfinite(worldOrigin))
+                    || !(outsideCols >= 1 && outsideCols <= 8192)
+                    || !(outsideRows >= 1 && outsideRows <= 8192))
+                {
+                    issues.Warn("TERRAIN_OUTSIDE_UNAVAILABLE", "外围地形范围无法采样，已使用主体地形范围");
+                    includeOutside = false;
+                }
+                else
+                {
+                    cols = (int)outsideCols;
+                    rows = (int)outsideRows;
+                    spanX = worldSize.x;
+                    spanZ = worldSize.y;
+                    originX = worldOrigin.x;
+                    originZ = worldOrigin.y;
+                }
             }
             var cellX = spanX / cols;
             var cellZ = spanZ / rows;
@@ -112,54 +138,70 @@ namespace CSLModernMap.Systems
                     }
                 }
             }
-            catch (Exception e)
+            catch (Exception e) when (includeOutside && (e is ArgumentException
+                || e is InvalidOperationException || e is IndexOutOfRangeException))
             {
-                throw new InvalidDataException("TerrainUtils.SampleHeight采样失败", e);
+                issues.Warn("TERRAIN_OUTSIDE_UNAVAILABLE", "外围地形采样失败，已使用主体地形范围: " + e.Message);
+                return BuildTerrain(world, issues, false);
             }
 
-            var waterValues = new float[rows * cols];
-            var water = world.GetExistingSystemManaged<WaterSystem>();
-            if (water == null)
+            float[] waterValues = null;
+            var seaLevel = 0f;
+            try
             {
-                throw new InvalidDataException("WaterSystem不存在");
-            }
-
-            var seaLevel = water.SeaLevel;
-            var surface = water.GetSurfaceData(out var deps);
-            deps.Complete();
-
-            if (!surface.depths.IsCreated)
-            {
-                throw new InvalidDataException("WaterSurfaceData不可用");
-            }
-
-            var wCols = surface.resolution.x;
-            var wRows = surface.resolution.z;
-            var wCellX = surface.scale.x != 0f ? 1f / surface.scale.x : 0f;
-            var wCellZ = surface.scale.z != 0f ? 1f / surface.scale.z : 0f;
-            if (wCols <= 0 || wRows <= 0 || wCellX <= 0f || wCellZ <= 0f
-                || (long)wCols * wRows != surface.depths.Length)
-            {
-                throw new InvalidDataException("Water surface grid is invalid.");
-            }
-
-            ResampleWaterDepth(
-                ref surface, rows, cols, originX, originZ, cell, waterValues);
-
-            if (includeOutside)
-            {
-                var cityMin = terrain.playableOffset;
-                var cityMax = cityMin + terrain.playableArea;
-                for (var r = 0; r < rows; r++)
+                var water = world.GetExistingSystemManaged<WaterSystem>();
+                if (water == null)
                 {
-                    var z = originZ + (r + .5f) * cell;
-                    for (var c = 0; c < cols; c++)
+                    throw new InvalidDataException("WaterSystem不存在");
+                }
+
+                var currentSeaLevel = water.SeaLevel;
+                if (!math.isfinite(currentSeaLevel))
+                    throw new InvalidDataException("海平面高度不可用");
+                seaLevel = currentSeaLevel;
+                var surface = water.GetSurfaceData(out var deps);
+                deps.Complete();
+
+                if (!surface.depths.IsCreated)
+                {
+                    throw new InvalidDataException("WaterSurfaceData不可用");
+                }
+
+                var wCols = surface.resolution.x;
+                var wRows = surface.resolution.z;
+                var wCellX = surface.scale.x != 0f ? 1f / surface.scale.x : 0f;
+                var wCellZ = surface.scale.z != 0f ? 1f / surface.scale.z : 0f;
+                if (wCols <= 0 || wRows <= 0 || wCellX <= 0f || wCellZ <= 0f
+                    || (long)wCols * wRows != surface.depths.Length)
+                {
+                    throw new InvalidDataException("Water surface grid is invalid.");
+                }
+
+                waterValues = new float[rows * cols];
+                ResampleWaterDepth(
+                    ref surface, rows, cols, originX, originZ, cell, waterValues);
+
+                if (includeOutside)
+                {
+                    var cityMin = terrain.playableOffset;
+                    var cityMax = cityMin + terrain.playableArea;
+                    for (var r = 0; r < rows; r++)
                     {
-                        var x = originX + (c + .5f) * cell;
-                        if (x < cityMin.x || x >= cityMax.x || z < cityMin.y || z >= cityMax.y)
-                            waterValues[r * cols + c] = Math.Max(0f, seaLevel - heightValues[r * cols + c]);
+                        var z = originZ + (r + .5f) * cell;
+                        for (var c = 0; c < cols; c++)
+                        {
+                            var x = originX + (c + .5f) * cell;
+                            if (x < cityMin.x || x >= cityMax.x || z < cityMin.y || z >= cityMax.y)
+                                waterValues[r * cols + c] = Math.Max(0f, seaLevel - heightValues[r * cols + c]);
+                        }
                     }
                 }
+            }
+            catch (Exception e) when (e is InvalidDataException || e is ArgumentException
+                || e is InvalidOperationException || e is IndexOutOfRangeException)
+            {
+                waterValues = null;
+                issues.Warn("WATER_UNAVAILABLE", "水域无法读取，已保留高度并省略水深: " + e.Message);
             }
 
             var json = new StringBuilder(2 * 1024 * 1024);
@@ -170,17 +212,17 @@ namespace CSLModernMap.Systems
                 .Append(", \"source_subsampled\": ").Append(SubsampleFactor(srcCols, cols, srcRows, rows).ToString(CultureInfo.InvariantCulture))
                 .AppendLine(",");
             AppendGrid(json, "height", heightValues, rows, cols, originX, originZ, cell);
-            json.AppendLine(",");
-            AppendGrid(json, "water_depth", waterValues, rows, cols, originX, originZ, cell);
+            if (waterValues != null)
+            {
+                json.AppendLine(",");
+                AppendGrid(json, "water_depth", waterValues, rows, cols, originX, originZ, cell);
+            }
             json.AppendLine();
             json.Append("      }");
 
             return new Result
             {
                 Json = json.ToString(),
-                Issues = issues.ToJson(),
-                IssueCount = issues.Count,
-                FirstIssue = issues.First,
                 SeaLevel = seaLevel,
                 Rows = rows,
                 Cols = cols,

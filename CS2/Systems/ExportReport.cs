@@ -87,6 +87,8 @@ namespace CSLModernMap.Systems
         private static int s_Issues;
         private static string s_FirstIssue = "";
         private static string s_Reason = "";
+        private static string s_RunningStatusKey;
+        private static int? s_WritingProgress;
 
         private static bool s_RecoverAttempted;
 
@@ -98,9 +100,12 @@ namespace CSLModernMap.Systems
             s_Reason = "";
         }
 
-        internal static void MarkRunning()
+        internal static void MarkRunning(
+            string statusKey = "CSLModernMap.UI.ExportReport.StatusText.EA8EE21FF0", int? writingProgress = null)
         {
             s_State = ExportState.Running;
+            s_RunningStatusKey = statusKey;
+            s_WritingProgress = writingProgress;
         }
 
         internal static void MarkSucceeded(ExportResult result)
@@ -132,8 +137,12 @@ namespace CSLModernMap.Systems
                 switch (s_State)
                 {
                     case ExportState.Queued:
+                        return global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.ExportProgress.Waiting");
                     case ExportState.Running:
-                        return global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.ExportReport.StatusText.EA8EE21FF0");
+                        var status = global::CSLModernMap.Settings.ModText.Get(s_RunningStatusKey);
+                        return s_WritingProgress.HasValue
+                            ? string.Format(CultureInfo.InvariantCulture, status, s_WritingProgress.Value)
+                            : status;
                     case ExportState.Succeeded:
                         return global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.ExportReport.StatusText.5603E01058");
                     case ExportState.SucceededWithWarnings:

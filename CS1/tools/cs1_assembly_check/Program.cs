@@ -4,20 +4,22 @@ using System.Reflection.PortableExecutable;
 using System.Security.Cryptography;
 using System.Text.Json;
 
-static (HashSet<string> Types, string[] References, string Version) Inspect(string path, bool merged)
+static (Dictionary<string, TypeAttributes> Types, string[] References, string Version, Guid ModuleId) Inspect(string path, bool merged)
 {
     using var stream = File.OpenRead(path);
     using var pe = new PEReader(stream);
     var metadata = pe.GetMetadataReader();
-    var types = new HashSet<string>();
+    var types = new Dictionary<string, TypeAttributes>();
     foreach (var handle in metadata.TypeDefinitions)
     {
         var type = metadata.GetTypeDefinition(handle);
         var ns = metadata.GetString(type.Namespace);
-        types.Add(ns + "." + metadata.GetString(type.Name));
+        var name = metadata.GetString(type.Name);
+        var visibility = type.Attributes & TypeAttributes.VisibilityMask;
+        types[ns + "." + name] = visibility;
         if (merged && ns.StartsWith("Newtonsoft.Json", StringComparison.Ordinal) &&
-            (type.Attributes & TypeAttributes.VisibilityMask) == TypeAttributes.Public)
-            throw new InvalidDataException("Public Json.NET type: " + metadata.GetString(type.Name));
+            visibility == TypeAttributes.Public)
+            throw new InvalidDataException("Public Json.NET type: " + name);
     }
     var references = metadata.AssemblyReferences.Select(h => {
         var reference = metadata.GetAssemblyReference(h);
@@ -25,18 +27,32 @@ static (HashSet<string> Types, string[] References, string Version) Inspect(stri
     }).Order().ToArray();
     if (merged && references.Any(r => r.StartsWith("Newtonsoft.Json,")))
         throw new InvalidDataException("External Newtonsoft.Json reference remains");
-    return (types, references, metadata.GetAssemblyDefinition().Version.ToString());
+    return (types, references, metadata.GetAssemblyDefinition().Version.ToString(),
+        metadata.GetGuid(metadata.GetModuleDefinition().Mvid));
 }
+
+static bool IsInternal(Dictionary<string, TypeAttributes> types, string name) =>
+    types.TryGetValue(name, out var visibility) && visibility == TypeAttributes.NotPublic;
 
 if (args.Length != 3) throw new ArgumentException("Expected merged DLL, original DLL, Json.NET net35 DLL");
 var merged = Inspect(args[0], true);
 var original = Inspect(args[1], false);
 var json = Inspect(args[2], false);
-if (!merged.Types.Contains("Newtonsoft.Json.JsonWriter") || !merged.Types.Contains("Newtonsoft.Json.Linq.JObject"))
+if (!merged.Types.ContainsKey("Newtonsoft.Json.JsonWriter") || !merged.Types.ContainsKey("Newtonsoft.Json.Linq.JObject"))
     throw new InvalidDataException("Private Json.NET missing");
 // A strict type union prevents accidentally merging a game or another mod DLL.
-original.Types.UnionWith(json.Types);
-if (!merged.Types.SetEquals(original.Types))
+var expectedTypes = original.Types.Keys.ToHashSet();
+expectedTypes.UnionWith(json.Types.Keys);
+const string details = ".<PrivateImplementationDetails>";
+if (IsInternal(original.Types, details) && IsInternal(json.Types, details))
+{
+    // ILRepack prefixes the first input's colliding compiler type with its module ID.
+    var renamed = $".<{original.ModuleId}><PrivateImplementationDetails>";
+    if (!IsInternal(merged.Types, details) || !IsInternal(merged.Types, renamed))
+        throw new InvalidDataException("Missing internal compiler detail type after ILRepack");
+    expectedTypes.Add(renamed);
+}
+if (!expectedTypes.SetEquals(merged.Types.Keys))
     throw new InvalidDataException("Merged types differ from the mod + Json.NET allowlist");
 if (json.Version != "13.0.0.0" || !json.References.Contains("mscorlib, Version=2.0.0.0"))
     throw new InvalidDataException("Expected Json.NET 13 net35");

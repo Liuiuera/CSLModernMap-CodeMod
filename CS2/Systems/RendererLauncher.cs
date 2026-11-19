@@ -8,20 +8,28 @@ using System.Text;
 
 namespace CSLModernMap.Systems
 {
+    internal enum RendererInstallationStatus
+    {
+        Waiting, Unsupported, MissingPayload, Manual, Installed, Older
+    }
+
     /// <summary>安装并启动地图查看器</summary>
     internal static class RendererLauncher
     {
-        internal const string PayloadFileName = "CSLModernMapRenderer.cslmr";
-        internal const string PayloadHashFileName = "CSLModernMapRenderer.cslmr.sha256";
+        internal const string PayloadFileName = "CSLModernMapRenderer.zip";
+        internal const string PayloadHashFileName = "CSLModernMapRenderer.zip.sha256";
         internal const string PayloadVersionFileName = "renderer-version.txt";
 
         private const string RendererExeName = "CSLModernMapRenderer.exe";
 
         private static string s_ModDirectory = "";
+        internal static RendererInstallationStatus InstallationStatus { get; private set; }
+        internal static string StatusVersion { get; private set; } = "";
 
         internal static void Initialize(string modDirectory)
         {
             s_ModDirectory = modDirectory ?? "";
+            RefreshInstallationStatus();
         }
 
         internal static bool IsSupported =>
@@ -69,7 +77,27 @@ namespace CSLModernMap.Systems
                 ? ""
                 : Path.Combine(InstalledDirectory, RendererExeName);
 
-        internal static bool IsInstalled => File.Exists(InstalledExecutable);
+        // LocalLow executables inherit Low integrity and cannot host the central preview reliably.
+        internal static string ManualExecutable => RendererManualInstall.FindExecutable(ExportPaths.RendererDirectory, PayloadVersion);
+
+        internal static bool HasManualInstallation => ManualExecutable != null;
+
+        internal static bool IsInstalled => HasManualInstallation
+            || (File.Exists(InstalledExecutable)
+                && File.Exists(Path.Combine(InstalledDirectory, "engine", "CSLModernMapEngine.exe")));
+
+        internal static bool RefreshInstallationStatus()
+        {
+            StatusVersion = PayloadVersion;
+            InstallationStatus = !IsSupported ? RendererInstallationStatus.Unsupported
+                : HasManualInstallation ? RendererInstallationStatus.Manual
+                : !HasPayload ? RendererInstallationStatus.MissingPayload
+                : IsInstalled ? RendererInstallationStatus.Installed
+                : HasOlderInstallation ? RendererInstallationStatus.Older
+                : RendererInstallationStatus.Waiting;
+            return InstallationStatus == RendererInstallationStatus.Manual
+                || InstallationStatus == RendererInstallationStatus.Installed;
+        }
 
         internal static bool HasOlderInstallation
         {
@@ -103,6 +131,11 @@ namespace CSLModernMap.Systems
             if (!IsSupported)
             {
                 throw new InvalidOperationException("Renderer installation is only supported on Windows.");
+            }
+
+            if (HasManualInstallation)
+            {
+                return ManualExecutable;
             }
 
             if (!HasPayload)
@@ -161,12 +194,12 @@ namespace CSLModernMap.Systems
                 throw new FileNotFoundException("Renderer is not installed.", InstalledExecutable);
             }
 
-            var executable = InstalledExecutable;
+            var executable = HasManualInstallation ? ManualExecutable : InstalledExecutable;
             var workingDirectory = ExportPaths.ExportDirectory;
             try
             {
                 var processId = RendererDetachedProcess.Start(
-                    executable, "\"" + exportPath + "\"", workingDirectory);
+                    executable, string.IsNullOrEmpty(exportPath) ? "" : "\"" + exportPath + "\"", workingDirectory);
                 Mod.log.Info("[renderer] 查看器进程已创建，PID=" + processId);
             }
             catch (Exception error)
@@ -219,7 +252,7 @@ namespace CSLModernMap.Systems
             {
                 Process.Start(new ProcessStartInfo
                 {
-                    FileName = ExportPaths.RendererDirectory,
+                    FileName = HasManualInstallation ? Path.GetDirectoryName(ManualExecutable) : ExportPaths.RendererDirectory,
                     UseShellExecute = true,
                     ErrorDialog = true,
                 })?.Dispose();
@@ -228,6 +261,16 @@ namespace CSLModernMap.Systems
             {
                 Mod.log.Warn("[renderer] 无法打开渲染器目录: " + e.Message);
             }
+        }
+
+        internal static string PrepareManualInstallation()
+        {
+            return RendererManualInstall.PrepareDirectory(PayloadPath, ExportPaths.RendererDirectory);
+        }
+
+        internal static void OpenInstallHelp(string directory, string error)
+        {
+            RendererManualInstall.OpenHelp(PayloadPath, directory, "CS2", PayloadVersion, error);
         }
 
         private static string Combine(string fileName) =>
@@ -254,6 +297,10 @@ namespace CSLModernMap.Systems
             using (var stream = File.OpenRead(payloadPath))
             using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
             {
+                string folder = RendererManualInstall.VersionedFolderName(PayloadVersion);
+                if (archive.GetEntry(folder + "/renderer-manifest.sha256") == null)
+                    folder = archive.GetEntry(RendererManualInstall.FolderName + "/renderer-manifest.sha256") != null
+                        ? RendererManualInstall.FolderName : "";
                 foreach (var entry in archive.Entries)
                 {
                     if (entry.Name.Length == 0)
@@ -261,7 +308,8 @@ namespace CSLModernMap.Systems
                         continue;
                     }
 
-                    var target = Path.GetFullPath(Path.Combine(root, entry.FullName));
+                    var relativePath = RendererManualInstall.PayloadRelativePath(entry.FullName, folder);
+                    var target = Path.GetFullPath(Path.Combine(root, relativePath));
                     if (!target.StartsWith(root, StringComparison.OrdinalIgnoreCase))
                     {
                         throw new InvalidDataException("Renderer payload entry escapes the install directory.");

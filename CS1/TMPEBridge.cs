@@ -88,11 +88,12 @@ namespace CSLModernMap.Traffic
                 // meanSpeed: UInt16, scale 0 ~ 10000 (10000 = 100% speed limit)
                 // Clamp 防 TMPE 返回异常值
                 ushort rawMean = data.meanSpeed;
-                float rawF = (rawMean > 10000) ? 10000f : (float)rawMean;
+                float rawF = (rawMean > 10000) ? 10000f : ((rawMean < 0) ? 0f : (float)rawMean);
                 relativeSpeed01 = rawF / RELATIVE_SPEED_SCALE;
 
                 // maxTrafficBuffer: UInt16 -> clamp to Int32 reasonable range
                 vehicleCount = (int)data.maxTrafficBuffer;
+                if (vehicleCount < 0) vehicleCount = 0;
                 if (vehicleCount > 1024) vehicleCount = 1024;  // 单车道不可能超过 1024 辆，防御异常
 
                 return true;

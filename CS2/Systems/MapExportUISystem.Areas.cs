@@ -518,11 +518,9 @@ namespace CSLModernMap.Systems
             }
             catch (Exception e)
             {
-                name = "";
-                source = "empty";
                 Mod.log.Warn("[areas] 行政区名称解析失败: "
                     + e.GetType().Name + ": " + e.Message);
-                throw;
+                source = name.Length > 0 ? "game" : "empty";
             }
         }
 
@@ -606,7 +604,6 @@ namespace CSLModernMap.Systems
                 catch (Exception e)
                 {
                     Mod.log.Warn("[areas] 设施名解析失败: " + e.GetType().Name + ": " + e.Message);
-                    throw;
                 }
             }
 

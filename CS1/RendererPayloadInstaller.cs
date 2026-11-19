@@ -16,8 +16,8 @@ namespace CSLModernMap.UI
     /// </summary>
     internal static class RendererPayloadInstaller
     {
-        internal const string PayloadFileName = "CSLModernMapRenderer.cslmr";
-        internal const string PayloadHashFileName = "CSLModernMapRenderer.cslmr.sha256";
+        internal const string PayloadFileName = "CSLModernMapRenderer.zip";
+        internal const string PayloadHashFileName = "CSLModernMapRenderer.zip.sha256";
 
         private const string RendererExeName = "CSLModernMapRenderer.exe";
         private const string ManifestFileName = "renderer-manifest.sha256";
@@ -33,11 +33,35 @@ namespace CSLModernMap.UI
             internal string Sha256;
         }
 
+        internal static string FindManualExecutable(string exportDirectory)
+        {
+            return RendererManualInstall.FindExecutable(exportDirectory, CSLModernMap.MOD_VERSION);
+        }
+
+        internal static bool IsCurrentInstallation(string modDirectory, string installRoot)
+        {
+            return IsReusable(Path.Combine(installRoot, CSLModernMap.MOD_VERSION),
+                ReadExpectedHash(Path.Combine(modDirectory, PayloadHashFileName)));
+        }
+
         /// <summary>确保当前版本 renderer 已安装，返回入口 EXE 的绝对路径。</summary>
         internal static string EnsureInstalled(
             string modDirectory, string rendererInstallRoot, RendererInstallProgress progress, bool forceReinstall = false)
         {
             Report(progress, 0, "RENDERER_PROGRESS_CHECKING");
+
+            if (string.IsNullOrEmpty(rendererInstallRoot))
+            {
+                throw new DirectoryNotFoundException("Renderer install directory is unavailable.");
+            }
+            string installRoot = Path.GetFullPath(rendererInstallRoot);
+            string manualExecutable = FindManualExecutable(installRoot)
+                ?? FindManualExecutable(Path.GetDirectoryName(installRoot));
+            if (manualExecutable != null)
+            {
+                Report(progress, 100, "RENDERER_PROGRESS_READY");
+                return manualExecutable;
+            }
 
             if (string.IsNullOrEmpty(modDirectory))
             {
@@ -52,11 +76,6 @@ namespace CSLModernMap.UI
             }
 
             string expectedPayloadHash = ReadExpectedHash(hashPath);
-            if (string.IsNullOrEmpty(rendererInstallRoot))
-            {
-                throw new DirectoryNotFoundException("Renderer install directory is unavailable.");
-            }
-            string installRoot = Path.GetFullPath(rendererInstallRoot);
             string versionDirectory = Path.Combine(installRoot, CSLModernMap.MOD_VERSION);
             string stagingDirectory = versionDirectory + ".staging";
 
@@ -158,7 +177,18 @@ namespace CSLModernMap.UI
 
             using (ZipFile archive = openedArchive)
             {
-                ZipEntry manifestZipEntry = archive.GetEntry(ManifestFileName);
+                string folder = RendererManualInstall.VersionedFolderName(CSLModernMap.MOD_VERSION);
+                ZipEntry manifestZipEntry = archive.GetEntry(folder + "/" + ManifestFileName);
+                if (manifestZipEntry == null)
+                {
+                    folder = RendererManualInstall.FolderName;
+                    manifestZipEntry = archive.GetEntry(folder + "/" + ManifestFileName);
+                }
+                if (manifestZipEntry == null)
+                {
+                    folder = "";
+                    manifestZipEntry = archive.GetEntry(ManifestFileName);
+                }
                 if (manifestZipEntry == null || !manifestZipEntry.IsFile)
                 {
                     throw new InvalidDataException("Renderer manifest is missing from the payload.");
@@ -208,7 +238,7 @@ namespace CSLModernMap.UI
                     {
                         continue;
                     }
-                    string normalized = NormalizeRelativePath(entry.Name);
+                    string normalized = NormalizeRelativePath(RendererManualInstall.PayloadRelativePath(entry.Name, folder));
                     ResolveSafeTarget(stagingDirectory, normalized);
                     if (string.Equals(normalized, ManifestFileName, StringComparison.OrdinalIgnoreCase))
                     {

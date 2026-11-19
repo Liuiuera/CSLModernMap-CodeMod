@@ -1,4 +1,3 @@
-using System;
 using System.Threading;
 
 namespace CSLModernMap.Exporter
@@ -7,15 +6,34 @@ namespace CSLModernMap.Exporter
     {
         private readonly object sync = new object();
         private ManualResetEvent released = new ManualResetEvent(false);
-        internal volatile bool Ready, TimedOut;
+        internal volatile bool Ready, Cancelled;
 
         internal void Hold()
         {
             Ready = true;
-            try { if (!released.WaitOne(30000, false)) TimedOut = true; }
+            // Capture owns the hold until it completes or is cancelled.
+            try { released.WaitOne(); }
             finally { lock (sync) { released.Close(); released = null; } }
         }
 
-        internal void Release() { lock (sync) { if (released != null) released.Set(); } }
+        internal void StartImmediately()
+        {
+            Ready = true;
+            lock (sync)
+            {
+                if (released == null) return;
+                released.Close();
+                released = null;
+            }
+        }
+
+        internal void Release()
+        {
+            lock (sync)
+            {
+                Cancelled = true;
+                if (released != null) released.Set();
+            }
+        }
     }
 }
