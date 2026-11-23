@@ -31,7 +31,15 @@ dotnet build CS2\CSLModernMapCs2.csproj -c Release
 
 The CS1 build produces a verified `CS1/bin/private/CSLModernMap.dll`.
 The CS2 build also deploys into the local game Mods directory; exit CS2 first.
-Game/mod assemblies and viewer payloads must be supplied separately.
+Game/mod assemblies and viewer payloads must be supplied separately. For Windows releases,
+stage the signed companion viewer MSIX before building CS2 or assembling the CS1 release folder.
+
+    python tools/pack_cs2_renderer.py --msix path/to/viewer.msix
+    python tools/pack_cs2_renderer.py --msix path/to/viewer.msix --target path/to/CS1-release
+
+The staging command writes the MSIX and its application identity. In game, use Export and Open.
+On first use or when an update is needed, finish the Windows installation, then return to the game
+and select Install / Open Viewer. Export Only still just writes the map.
 The mods do not download required files from the network.
 
 ## License

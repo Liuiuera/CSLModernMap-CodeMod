@@ -42,22 +42,14 @@ namespace CSLModernMap.Systems
 
         private int m_ShownExportProgress;
 
-        private static volatile bool s_RendererWorkRunning;
-
-        private static volatile string s_RendererError = "";
-
-        private static volatile bool s_RendererInstallationFailed;
-
-        private static string s_PendingRendererNotice = "";
-
-        private static int s_ManualInstallPromptRequested;
         private static string s_RendererRetryMapPath;
-        private static string s_ManualHelpDirectory;
-        private static string s_ManualHelpError;
+        private static string s_ModDirectory;
+        private static string s_RendererStatusKey;
+        private static string s_RendererError;
+        internal static string RendererStatus => s_RendererError ?? (s_RendererStatusKey == null ? "" :
+            Settings.ModText.Get(s_RendererStatusKey));
 
         private static bool s_OpenFolderRequested;
-
-        private static bool s_OpenRendererFolderRequested;
 
         private static bool s_CopyFolderRequested;
 
@@ -112,52 +104,6 @@ namespace CSLModernMap.Systems
         private int m_AttachedLinkCount;
 
         private int m_UpgradeLinkCount;
-
-        internal static bool RendererBusy => s_RendererWorkRunning;
-
-        internal static string RendererStatus
-        {
-            get
-            {
-                if (s_RendererWorkRunning)
-                {
-                    return global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.2CBC968E35");
-                }
-
-                if (!string.IsNullOrEmpty(s_RendererError))
-                {
-                    if (s_RendererInstallationFailed)
-                        return string.Format(CultureInfo.InvariantCulture,
-                            global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.WaitingFailed"), s_RendererError);
-                    return (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.A52C7E0D20")) + s_RendererError;
-                }
-
-                if (RendererLauncher.InstallationStatus == RendererInstallationStatus.Manual)
-                {
-                    return global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.Installed");
-                }
-
-                if (RendererLauncher.InstallationStatus == RendererInstallationStatus.Unsupported)
-                {
-                    return global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.5FC5374073");
-                }
-
-                if (RendererLauncher.InstallationStatus == RendererInstallationStatus.MissingPayload)
-                {
-                    return global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.BCF7D8C55D");
-                }
-
-                if (RendererLauncher.InstallationStatus == RendererInstallationStatus.Installed)
-                {
-                    return (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.C9D3F3D2BF")) + RendererLauncher.StatusVersion;
-                }
-
-                return RendererLauncher.InstallationStatus == RendererInstallationStatus.Older
-                    ? (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.E726AAB194")) + RendererLauncher.StatusVersion
-                        + (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.110B58EB74"))
-                    : (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RendererStatus.41D3D2CC44"));
-            }
-        }
 
         [Preserve]
         protected override void OnCreate()
@@ -223,17 +169,6 @@ namespace CSLModernMap.Systems
         [Preserve]
         protected override void OnUpdate()
         {
-            var rendererNotice = Interlocked.Exchange(ref s_PendingRendererNotice, "");
-            if (!string.IsNullOrEmpty(rendererNotice))
-            {
-                ShowNotification(RendererNoticeId, rendererNotice);
-            }
-
-            if (Interlocked.Exchange(ref s_ManualInstallPromptRequested, 0) != 0)
-            {
-                ShowManualInstallPrompt();
-            }
-
             if (s_OpenFolderRequested)
             {
                 s_OpenFolderRequested = false;
@@ -241,12 +176,6 @@ namespace CSLModernMap.Systems
                 ShellFolder.RevealOrCopy(
                     ExportPaths.ExportDirectory,
                     message => ShowNotification(FolderNoticeId, message));
-            }
-
-            if (s_OpenRendererFolderRequested)
-            {
-                s_OpenRendererFolderRequested = false;
-                RendererLauncher.OpenRendererDirectory();
             }
 
             if (s_CopyFolderRequested)
@@ -338,246 +267,57 @@ namespace CSLModernMap.Systems
 
         private void EnqueueExport(bool openAfterwards, bool withSatellite)
         {
-            if (openAfterwards && RendererLauncher.HasPayload
-                && !RendererLauncher.IsInstalled && RendererLauncher.HasOlderInstallation)
-            {
-                ShowNotification(RendererStartNoticeId,
-                    (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.QueueExport.57CD67E80A"))
-                    + RendererLauncher.PayloadVersion
-                    + (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.QueueExport.606539105E")));
-            }
-
             m_OpenAfterExport = openAfterwards;
             m_ExportWithSatellite = withSatellite;
             m_ExportRequested = true;
             ExportReport.MarkQueued();
         }
 
-        private static void ShowRendererInstallConfirmation()
-        {
-            if (!RendererLauncher.IsSupported || s_RendererWorkRunning) return;
-            var dialog = new ConfirmationDialog(
-                LocalizedString.Value(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.Confirm")),
-                LocalizedString.Value(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.ConfirmGuide")),
-                LocalizedString.Value(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.CheckAndOpen")),
-                LocalizedString.Value(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.OpenHelp")), Array.Empty<LocalizedString>());
-            GameManager.instance.userInterface.appBindings.ShowConfirmationDialog(dialog, result =>
-            {
-                if (result == 0) CheckAndOpenRenderer();
-                else if (result == 1) OpenManualInstallHelp();
-            });
-        }
+        internal static bool RendererSupported => System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(
+            System.Runtime.InteropServices.OSPlatform.Windows);
 
-        private static void CheckAndOpenRenderer()
+        internal static void InitializeRenderer(string directory)
         {
-            if (s_RendererWorkRunning) return;
-            if (RendererLauncher.RefreshInstallationStatus())
-            {
-                s_RendererError = "";
-                s_RendererInstallationFailed = false;
-                StartRendererWork(() =>
-                {
-                    RendererLauncher.Launch(s_RendererRetryMapPath);
-                    PostRendererNotice(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.Opened"));
-                });
-                return;
-            }
-            PostRendererNotice(RendererStatus);
-            var dialog = new ConfirmationDialog(
-                LocalizedString.Value(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.CheckTitle")),
-                LocalizedString.Value(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.NotFound")),
-                LocalizedString.Value(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.OpenHelp")),
-                LocalizedString.Id("Common.CLOSE"), Array.Empty<LocalizedString>());
-            GameManager.instance.userInterface.appBindings.ShowConfirmationDialog(dialog, result =>
-            {
-                if (result != 0) return;
-                OpenManualInstallHelp();
-            });
-        }
-
-        internal static void RequestInstallRenderer()
-        {
-            if (!RendererLauncher.IsSupported || s_RendererWorkRunning)
-            {
-                return;
-            }
-
+            s_ModDirectory = directory;
             s_RendererRetryMapPath = null;
-
-            if (RendererLauncher.HasManualInstallation)
-            {
-                s_RendererError = "";
-                s_RendererInstallationFailed = false;
-                RendererLauncher.RefreshInstallationStatus();
-                PostRendererNotice(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.Installed"));
-                return;
-            }
-
-            if (!RendererLauncher.HasPayload)
-            {
-                s_RendererInstallationFailed = true;
-                FailRenderer(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RequestInstallRenderer.01A918F707"));
-                Interlocked.Exchange(ref s_ManualInstallPromptRequested, 1);
-                return;
-            }
-
-            ShowNotificationOnGameThread(RendererStartNoticeId, InstallingRendererNotice);
-            StartRendererWork(() =>
-            {
-                EnsureRendererInstalled(true);
-                PostRendererNotice(string.Format(System.Globalization.CultureInfo.InvariantCulture, global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.RequestInstallRenderer.AB6548D24F"), RendererLauncher.PayloadVersion));
-            });
+            if (RendererSupported) ExportPaths.RegisterExportDirectory();
+            RefreshRendererStatus();
         }
 
-        private void OpenInRenderer(string exportPath)
+        private static void RefreshRendererStatus()
         {
-            if (!RendererLauncher.IsSupported)
+            s_RendererError = null;
+            if (!RendererSupported)
             {
+                s_RendererStatusKey = "CSLModernMap.UI.MapExportUISystem.RendererStatus.5FC5374073";
                 return;
             }
-
-            s_RendererRetryMapPath = exportPath;
-
-            if (!RendererLauncher.HasManualInstallation && !RendererLauncher.HasPayload)
-            {
-                s_RendererInstallationFailed = true;
-                FailRenderer(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.OpenInRenderer.01A918F707"));
-                Interlocked.Exchange(ref s_ManualInstallPromptRequested, 1);
-                return;
-            }
-
-            var installing = !RendererLauncher.IsInstalled;
-            var updating = installing && RendererLauncher.HasOlderInstallation;
-            if (installing)
-            {
-                ShowNotification(RendererStartNoticeId, updating
-                    ? (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.OpenInRenderer.8CB1C7E5AC"))
-                        + RendererLauncher.PayloadVersion
-                    : InstallingRendererNotice);
-            }
-
-            StartRendererWork(() =>
-            {
-                EnsureRendererInstalled();
-                RendererLauncher.Launch(exportPath);
-                if (installing)
-                {
-                    PostRendererNotice(global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.OpenInRenderer.B5717EE887"));
-                }
-            });
-        }
-
-        private static void EnsureRendererInstalled(bool reinstall = false)
-        {
             try
             {
-                RendererLauncher.EnsureInstalled(reinstall);
+                PackageStatus status = new WindowsRenderer(s_ModDirectory).Status();
+                s_RendererStatusKey = status == PackageStatus.Ready ? "CSLModernMap.UI.Msix.Ready"
+                    : status == PackageStatus.Update ? "CSLModernMap.UI.Msix.Update" : "CSLModernMap.UI.Msix.Missing";
             }
-            catch
-            {
-                s_RendererInstallationFailed = true;
-                throw;
-            }
+            catch (Exception error) { s_RendererError = error.Message; }
         }
 
-        private static void ShowManualInstallPrompt()
+        internal static void OpenRenderer(bool offerInstallation = true)
         {
-            s_ManualHelpDirectory = ExportPaths.RendererDirectory;
-            s_ManualHelpError = s_RendererError;
+            if (!RendererSupported) return;
             try
             {
-                s_ManualHelpDirectory = RendererLauncher.PrepareManualInstallation();
+                bool opened = new WindowsRenderer(s_ModDirectory).Open(s_RendererRetryMapPath, offerInstallation);
+                if (opened) s_RendererRetryMapPath = null;
+                RefreshRendererStatus();
+                if (!opened && offerInstallation) s_RendererStatusKey = "CSLModernMap.UI.Msix.InstallHint";
+                string message = opened ? Settings.ModText.Get("CSLModernMap.UI.Msix.Opened") : RendererStatus;
+                s_Instance?.ShowNotification(RendererNoticeId, message);
             }
             catch (Exception error)
             {
-                Mod.log.Error("[renderer] " + error);
-                s_ManualHelpError += "\n\n" + error;
-            }
-            OpenManualInstallHelp();
-        }
-
-        private static void OpenManualInstallHelp()
-        {
-            try
-            {
-                RendererLauncher.OpenInstallHelp(s_ManualHelpDirectory, s_ManualHelpError);
-                ShowRendererInstallConfirmation();
-            }
-            catch (Exception error)
-            {
-                Mod.log.Error("[renderer] " + error);
-                ShowNotificationOnGameThread(RendererNoticeId, error.Message);
-            }
-        }
-
-        private static void StartRendererWork(Action work)
-        {
-            lock (typeof(MapExportUISystem))
-            {
-                if (s_RendererWorkRunning)
-                {
-                    return;
-                }
-
-                s_RendererWorkRunning = true;
-                s_RendererError = "";
-                s_RendererInstallationFailed = false;
-            }
-
-            var thread = new System.Threading.Thread(() =>
-            {
-                try
-                {
-                    work();
-                    RendererLauncher.RefreshInstallationStatus();
-                }
-                catch (Exception e)
-                {
-                    Mod.log.Error("[renderer] 查看器安装/启动失败: " + e);
-                    FailRenderer(ExportReport.ShortReason(e));
-                }
-                finally
-                {
-                    lock (typeof(MapExportUISystem))
-                    {
-                        s_RendererWorkRunning = false;
-                    }
-                    if (s_RendererInstallationFailed)
-                        Interlocked.Exchange(ref s_ManualInstallPromptRequested, 1);
-                }
-            })
-            {
-                IsBackground = true,
-                Name = "CSLModernMap.Renderer",
-            };
-            thread.Start();
-        }
-
-        private static void FailRenderer(string reason)
-        {
-            s_RendererError = string.IsNullOrEmpty(reason)
-                ? (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.FailRenderer.13A46616E1"))
-                : reason;
-            PostRendererNotice(s_RendererInstallationFailed
-                ? string.Format(CultureInfo.InvariantCulture,
-                    global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.RendererManual.WaitingFailed"), s_RendererError)
-                : (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.FailRenderer.0DE817BA18")) + s_RendererError);
-        }
-
-        private static void PostRendererNotice(string message)
-        {
-            Interlocked.Exchange(ref s_PendingRendererNotice, message ?? "");
-        }
-
-        private static string InstallingRendererNotice =>
-            global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.MapExportUISystem.InstallingRendererNotice.CB8FD8567A");
-
-        private static void ShowNotificationOnGameThread(string notificationId, string message)
-        {
-            var instance = s_Instance;
-            if (instance != null)
-            {
-                instance.ShowNotification(notificationId, message);
+                Mod.log.Error("[renderer] MSIX: " + error);
+                s_RendererError = error.Message;
+                s_Instance?.ShowNotification(RendererNoticeId, RendererStatus);
             }
         }
 
@@ -601,11 +341,6 @@ namespace CSLModernMap.Systems
             }
 
             s_CopyFolderRequested = true;
-        }
-
-        internal static void RequestOpenRendererFolder()
-        {
-            s_OpenRendererFolderRequested = true;
         }
 
         private void ProcessExport()
@@ -692,7 +427,8 @@ namespace CSLModernMap.Systems
                 if (m_OpenAfterExport)
                 {
                     m_OpenAfterExport = false;
-                    OpenInRenderer(result.Path);
+                    s_RendererRetryMapPath = result.Path;
+                    OpenRenderer();
                 }
             }
             catch (Exception e)
@@ -864,7 +600,6 @@ namespace CSLModernMap.Systems
 
         private const string FolderNoticeId = "CSLModernMap.Export.Folder";
 
-        private const string RendererStartNoticeId = "CSLModernMap.Renderer.Start";
 
         private const string RendererNoticeId = "CSLModernMap.Renderer.Result";
 

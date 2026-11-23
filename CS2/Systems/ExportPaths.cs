@@ -12,11 +12,8 @@ namespace CSLModernMap.Systems
 
         private const string RootFolderName = "CSLModernMap";
 
-        internal const string RendererFolderName = "Renderer";
-
         private const string FileSuffix = ".cmm";
 
-        private const string LegacyFileSuffix = ".cmm.gz";
 
         internal static string ExportDirectory
         {
@@ -27,12 +24,15 @@ namespace CSLModernMap.Systems
             }
         }
 
-        internal static string RendererDirectory
+        internal static void RegisterExportDirectory()
         {
-            get
+            try
             {
-                var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-                return Path.Combine(local, RootFolderName, RendererFolderName);
+                GameExportDirectories.Register(GameExportDirectories.RegistryDirectory, ExportGame.CS2, ExportDirectory);
+            }
+            catch (Exception error) when (error is IOException || error is UnauthorizedAccessException || error is ArgumentException)
+            {
+                Mod.log.Warn("[export] Could not register the export directory: " + error.Message);
             }
         }
 
@@ -87,11 +87,8 @@ namespace CSLModernMap.Systems
                 }
 
                 FileInfo newest = null;
-                foreach (var file in directory.EnumerateFiles())
+                foreach (var file in GameExportDirectories.EnumerateMaps(directory.FullName))
                 {
-                    if (!file.Name.EndsWith(FileSuffix, StringComparison.OrdinalIgnoreCase)
-                        && !file.Name.EndsWith(LegacyFileSuffix, StringComparison.OrdinalIgnoreCase))
-                        continue;
                     if (newest == null || file.LastWriteTimeUtc > newest.LastWriteTimeUtc)
                     {
                         newest = file;

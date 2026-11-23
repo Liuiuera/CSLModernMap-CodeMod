@@ -20,4 +20,4 @@ archive, compiles the net35 profile, privately merges it and validates the resul
 Use `bin/private/CSLModernMap.dll` together with its `.verified.json` report.
 
 Viewer payloads are not included in the source repository. Official release
-packages supply `CSLModernMapRenderer.zip` and its SHA-256 file separately.
+packages supply `CSLModernMapRenderer.msix` and `renderer-package.txt`. Stage the signed viewer package into the CS1 release folder using the same staging tool described in the [root README](../README.md).

@@ -20,6 +20,7 @@ namespace CSLModernMap.Settings
         internal const string Render3DGroup = "Render3D";
         internal const string AboutGroup = "About";
 
+        internal const string ExportButtons = "ExportButtons";
         internal const string RendererButtons = "RendererButtons";
         internal const string FolderButtons = "FolderButtons";
 
@@ -43,7 +44,7 @@ namespace CSLModernMap.Settings
         [SettingsUISection(MainTab, ExportGroup)]
         [SettingsUIButton]
         [SettingsUIHideByCondition(typeof(CSLModernMapSettings), nameof(IsRendererUnsupported))]
-        [SettingsUIDisableByCondition(typeof(CSLModernMapSettings), nameof(IsExportBlocked))]
+        [SettingsUIDisableByCondition(typeof(CSLModernMapSettings), nameof(IsExportBusy))]
         public bool ExportAndOpen
         {
             set => Systems.MapExportUISystem.RequestExportAndOpen();
@@ -51,10 +52,21 @@ namespace CSLModernMap.Settings
 
         [SettingsUISection(MainTab, ExportGroup)]
         [SettingsUIButton]
+        [SettingsUIButtonGroup(ExportButtons)]
         [SettingsUIDisableByCondition(typeof(CSLModernMapSettings), nameof(IsExportBusy))]
         public bool ExportCurrentCity
         {
             set => Systems.MapExportUISystem.RequestExport();
+        }
+
+        [SettingsUISection(MainTab, ExportGroup)]
+        [SettingsUIButton]
+        [SettingsUIButtonGroup(ExportButtons)]
+        [SettingsUIHideByCondition(typeof(CSLModernMapSettings), nameof(IsRendererUnsupported))]
+        [SettingsUIDisableByCondition(typeof(CSLModernMapSettings), nameof(IsExportBusy))]
+        public bool OpenRenderer
+        {
+            set => Systems.MapExportUISystem.OpenRenderer(offerInstallation: false);
         }
 
 #if CS2_SATELLITE_TRIALS
@@ -83,10 +95,10 @@ namespace CSLModernMap.Settings
         [SettingsUIButton]
         [SettingsUIButtonGroup(RendererButtons)]
         [SettingsUIHideByCondition(typeof(CSLModernMapSettings), nameof(IsRendererUnsupported))]
-        [SettingsUIDisableByCondition(typeof(CSLModernMapSettings), nameof(IsRendererBusy))]
+        [SettingsUIDisableByCondition(typeof(CSLModernMapSettings), nameof(IsExportBusy))]
         public bool InstallRenderer
         {
-            set => Systems.MapExportUISystem.RequestInstallRenderer();
+            set => Systems.MapExportUISystem.OpenRenderer();
         }
 
         [SettingsUISection(RendererTab, RendererGroup)]
@@ -99,15 +111,6 @@ namespace CSLModernMap.Settings
 
         [SettingsUISection(RendererTab, RendererGroup)]
         [SettingsUIButton]
-        [SettingsUIButtonGroup(FolderButtons)]
-        [SettingsUIHideByCondition(typeof(CSLModernMapSettings), nameof(IsRendererUnsupported))]
-        public bool OpenRendererFolder
-        {
-            set => Systems.MapExportUISystem.RequestOpenRendererFolder();
-        }
-
-        [SettingsUISection(RendererTab, RendererGroup)]
-        [SettingsUIButton]
         public bool CopyExportFolderPath
         {
             set => Systems.MapExportUISystem.RequestCopyExportFolder();
@@ -115,11 +118,7 @@ namespace CSLModernMap.Settings
 
         public bool IsExportBusy => Systems.ExportReport.IsBusy;
 
-        public bool IsExportBlocked => Systems.ExportReport.IsBusy || Systems.MapExportUISystem.RendererBusy;
-
-        public bool IsRendererBusy => Systems.MapExportUISystem.RendererBusy;
-
-        public bool IsRendererUnsupported => !Systems.RendererLauncher.IsSupported;
+        public bool IsRendererUnsupported => !Systems.MapExportUISystem.RendererSupported;
 
         [SettingsUISection(RendererTab, AboutGroup)]
         public string Version => "CSLModernMap " + Mod.ModVersion;
