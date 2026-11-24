@@ -413,7 +413,7 @@ namespace CSLModernMap.UI
             }
         }
 
-        /// <summary>内嵌的 macOS 安装指南逻辑名（与 csproj 的 LogicalName 一致）。</summary>
+        /// <summary>内嵌的 macOS 安装指南资源名。</summary>
         private const string MAC_GUIDE_RESOURCE = "CSLModernMap.mac-guide.html";
 
         private static void LaunchMacRendererCore(string mapPath, bool offerInstallation = true)
@@ -467,7 +467,7 @@ namespace CSLModernMap.UI
             catch (Exception error) { SetStatus(error.Message, true); }
         }
 
-        /// <summary>把内嵌的安装指南抽取到输出目录并替换版本占位符，返回本地文件路径。</summary>
+        /// <summary>把内嵌的安装指南按当前语言写到输出目录，返回本地文件路径。</summary>
         private static string MaterializeMacGuide(string outputDir)
         {
             string target = Path.Combine(outputDir, "mac-guide.html");
@@ -479,9 +479,7 @@ namespace CSLModernMap.UI
                 }
                 using (StreamReader reader = new StreamReader(stream))
                 {
-                    string html = reader.ReadToEnd()
-                        .Replace("{{MOD_VERSION}}", CSLModernMap.MOD_VERSION)
-                        .Replace("{{LANG}}", GuideLanguageCode());
+                    string html = reader.ReadToEnd().Replace("{{LANG}}", GuideLanguageCode());
                     File.WriteAllText(target, html);
                 }
             }
