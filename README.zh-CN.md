@@ -29,7 +29,12 @@ dotnet build CS2\CSLModernMapCs2.csproj -c Release
 
 CS1 构建产物为已验证的 `CS1/bin/private/CSLModernMap.dll`。
 CS2 构建还会部署到本地游戏 Mods 目录，运行前须退出 CS2。
-游戏／模组程序集和查看器载荷需另行提供。模组不会从网络下载必需文件。
+游戏／模组程序集和查看器载荷需另行提供。Windows 发行包需要将签名的查看器 MSIX 放入模组目录。CS2 在构建前暂存，CS1 在组装发行目录时暂存。
+
+    python tools/pack_cs2_renderer.py --msix path/to/viewer.msix
+    python tools/pack_cs2_renderer.py --msix path/to/viewer.msix --target path/to/CS1-release
+
+暂存命令同时写入应用身份。首次使用或需要更新时，按 Windows 提示安装，再回到游戏点「安装 / 打开查看器」打开刚导出的地图。「仅导出」仍只写出文件。模组不会从网络下载必需文件。
 
 ## 许可
 

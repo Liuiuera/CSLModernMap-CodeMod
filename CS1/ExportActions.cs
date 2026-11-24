@@ -2,7 +2,6 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
-using System.Threading;
 using ColossalFramework;
 using ColossalFramework.Plugins;
 using ColossalFramework.UI;
@@ -45,18 +44,16 @@ namespace CSLModernMap.UI
             AlgernonCommons.Logging.Error(context.ToString(), error.ToString());
         }
 
-        // 防止导出与安装任务重复启动。
+        // 防止重复启动导出。
         private static volatile bool _isExporting;
-
-
 
         // 面板可能重建；后台线程不访问这些控件。
         private static UIButton _exportButton;
         private static UIButton _rendererButton;
+        private static UIButton _openRendererButton;
         private static UIButton _installRendererButton;
         private static UILabel _lastExportLabel, _countsLabel, _rendererStatusLabel;
         private static ExportSummary _lastExport;
-        private static bool _rendererInstallOnly;
         private static UILabel _statusLabel;
         private static string _statusMessage;
         private static Color32 _statusColor;
@@ -68,28 +65,20 @@ namespace CSLModernMap.UI
         private static int _progressPercent;
         private static string _progressStageKey;
         private static bool _progressVisible;
-        private static bool _completionPending;
-        private static bool _completionSuccess;
-        private static string _completionErrorKey;
-        private static string _completionDetail;
-        private static string _manualInstallDirectory;
-        private static string _manualInstallModDirectory;
-        private static string _manualHelpDirectory;
-        private static string _manualHelpError;
         private static string _rendererStatusMessage;
-        private static string _lastRendererInstallationError;
         private static string _rendererRetryMapPath;
         private static float _hideProgressAt = -1f;
 
         /// <summary>注册当前面板的按钮与状态标签（面板每次创建时调用）。</summary>
         public static void Register(UIButton exportButton, UIButton rendererButton,
-                                    UIButton installRendererButton,
+                                    UIButton openRendererButton, UIButton installRendererButton,
                                     UILabel lastExportLabel, UILabel countsLabel, UILabel rendererStatusLabel,
                                     UIProgressBar progressBar, UILabel progressLabel,
                                     UILabel statusLabel)
         {
             _exportButton = exportButton;
             _rendererButton = rendererButton;
+            _openRendererButton = openRendererButton;
             _installRendererButton = installRendererButton;
             _lastExportLabel = lastExportLabel; _countsLabel = countsLabel; _rendererStatusLabel = rendererStatusLabel;
             RefreshRendererStatus();
@@ -108,20 +97,11 @@ namespace CSLModernMap.UI
             int percent;
             string stageKey;
             bool visible;
-            bool completed;
-            bool success;
-            string errorKey;
-            string detail;
             lock (ProgressLock)
             {
                 percent = _progressPercent;
                 stageKey = _progressStageKey;
                 visible = _progressVisible;
-                completed = _completionPending;
-                success = _completionSuccess;
-                errorKey = _completionErrorKey;
-                detail = _completionDetail;
-                _completionPending = false;
             }
 
             try
@@ -141,37 +121,6 @@ namespace CSLModernMap.UI
             }
             catch
             {
-            }
-
-            if (completed)
-            {
-                _isExporting = false;
-                SetButtonsEnabled(true);
-                if (success)
-                {
-                    _lastRendererInstallationError = null;
-                    SetStatus(_rendererInstallOnly ? Translations.Translate("RENDERER_INSTALL_SUCCEEDED")
-                        : Translations.Translate("EXPORT_OPEN_SUCCEEDED") + ExportWarningText(), false);
-                    RefreshRendererStatus();
-                }
-                else
-                {
-                    if (_manualInstallDirectory != null)
-                    {
-                        _lastRendererInstallationError = detail;
-                        _rendererStatusMessage = string.Format(Translations.Translate("RENDERER_WAITING_FAILED"), detail);
-                        RefreshSummaryUI();
-                        SetStatusNeutral(_rendererStatusMessage);
-                        ShowManualInstallPrompt(_manualInstallModDirectory, _manualInstallDirectory);
-                    }
-                    else
-                    {
-                        SetStatus(Translations.Translate(string.IsNullOrEmpty(errorKey)
-                            ? "RENDERER_PREPARE_FAILED" : errorKey) + detail, true);
-                    }
-                }
-                // 至少保留短时间的 100%，让最后一帧能实际显示出来。
-                _hideProgressAt = Time.realtimeSinceStartup + 0.75f;
             }
 
             if (_hideProgressAt >= 0f && Time.realtimeSinceStartup >= _hideProgressAt)
@@ -250,54 +199,17 @@ namespace CSLModernMap.UI
         }
 
         public static void InstallRenderer()
+        { OpenRenderer(offerInstallation: true); }
+
+        public static void OpenRenderer(bool offerInstallation = false)
         {
             if (_isExporting) return;
             ExportTaskRunner.Ensure();
-            if (IsMacClient) { LaunchMacRendererCore(null); return; }
-            _isExporting = true; SetButtonsEnabled(false);
-            try { BeginWindowsRendererTask(null, GetModDirPath(), true); }
-            catch (Exception ex) { _isExporting = false; SetButtonsEnabled(true); SetStatus(ex.Message, true); }
+            if (IsMacClient) { LaunchMacRendererCore(_rendererRetryMapPath, offerInstallation); return; }
+            OpenWindowsRenderer(offerInstallation);
         }
 
-        public static void OpenRendererFolder()
-        {
-            string outputDirectory = CSLModernMapConfig.LoadOrDefault().GetOutputDirPath();
-            string root = Path.Combine(outputDirectory, "Renderer");
-            string manual = RendererPayloadInstaller.FindManualExecutable(root)
-                ?? RendererPayloadInstaller.FindManualExecutable(outputDirectory);
-            string directory = IsMacClient ? "/Applications" : manual != null ? Path.GetDirectoryName(manual) : root;
-            OpenFolder(directory);
-        }
-
-        private static void ShowManualInstallPrompt(string modDirectory, string exportDirectory)
-        {
-            _manualInstallModDirectory = modDirectory;
-            _manualHelpDirectory = Path.Combine(exportDirectory, "Renderer");
-            _manualHelpError = _lastRendererInstallationError;
-            string payload = Path.Combine(modDirectory, RendererPayloadInstaller.PayloadFileName);
-            try
-            {
-                _manualHelpDirectory = RendererManualInstall.PrepareDirectory(payload,
-                    _manualHelpDirectory, exportDirectory);
-            }
-            catch (Exception error)
-            {
-                UnityEngine.Debug.LogError("[CSLModernMap] " + error);
-                _manualHelpError += "\n\n" + error;
-            }
-            OpenManualInstallHelp();
-        }
-
-        private static void OpenManualInstallHelp()
-        {
-            try
-            {
-                RendererManualInstall.OpenHelp(Path.Combine(_manualInstallModDirectory, RendererPayloadInstaller.PayloadFileName),
-                    _manualHelpDirectory, "CS1", CSLModernMap.MOD_VERSION, _manualHelpError);
-                ShowRendererInstallConfirmation();
-            }
-            catch (Exception error) { SetStatus(error.Message, true); }
-        }
+        public static void OpenMacApplications() { OpenFolder("/Applications"); }
 
         public static void CopyOutputDir()
         { GUIUtility.systemCopyBuffer = CSLModernMapConfig.LoadOrDefault().GetOutputDirPath(); SetStatus(Translations.Translate("OUTPUT_COPIED"), false); }
@@ -369,6 +281,21 @@ namespace CSLModernMap.UI
             return true;
         }
 
+        internal static void RegisterExportDirectory(string directory = null)
+        {
+            if (Environment.OSVersion.Platform != PlatformID.Win32NT) return;
+
+            try
+            {
+                GameExportDirectories.Register(GameExportDirectories.RegistryDirectory, ExportGame.CS1,
+                    directory ?? CSLModernMapConfig.LoadOrDefault().GetOutputDirPath());
+            }
+            catch (Exception error) when (error is IOException || error is UnauthorizedAccessException || error is ArgumentException)
+            {
+                AlgernonCommons.Logging.Error("[export] Could not register the export directory", error.ToString());
+            }
+        }
+
         private static void StartExport(RendererTarget rendererTarget, bool withSatellite)
         {
             _isExporting = true; SetButtonsEnabled(false); _hideProgressAt = -1f;
@@ -388,22 +315,22 @@ namespace CSLModernMap.UI
                         _hideProgressAt = Time.realtimeSinceStartup + 2f;
                         return;
                     }
+                    RegisterExportDirectory(Path.GetDirectoryName(summary.Path));
                     _lastExport = summary; RefreshSummaryUI();
                     string message = Translations.Translate("EXPORT_SUCCESS_STATUS");
                     if (summary.Issues > 0) message += "\n" + string.Format(Translations.Translate("EXPORT_WARNINGS"), summary.Issues, summary.FirstIssue);
                     SetStatus(message, false);
                     if (rendererTarget == RendererTarget.Windows)
                     {
-                        try { BeginWindowsRendererTask(summary.Path, GetModDirPath(), false); }
-                        catch (Exception ex) { _isExporting = false; SetButtonsEnabled(true); SetStatus(Translations.Translate("RENDERER_PREPARE_FAILED") + ex.Message, true); }
-                        return;
+                        _rendererRetryMapPath = summary.Path;
+                        OpenWindowsRenderer();
                     }
                     if (rendererTarget == RendererTarget.MacOS) LaunchMacRendererCore(summary.Path);
                     _isExporting = false; SetButtonsEnabled(true); _hideProgressAt = Time.realtimeSinceStartup + 2f;
                 };
                 if (withSatellite)
-                    SatelliteExport.Begin(exporter.TargetDirectory, onCompleted, ReportRendererProgress);
-                else ExportTaskRunner.Begin(exporter, ReportRendererProgress, onCompleted);
+                    SatelliteExport.Begin(exporter.TargetDirectory, onCompleted, ReportExportProgress);
+                else ExportTaskRunner.Begin(exporter, ReportExportProgress, onCompleted);
             }
             catch (Exception ex)
             {
@@ -431,173 +358,49 @@ namespace CSLModernMap.UI
             }
         }
 
-        private static void ShowRendererInstallConfirmation()
+        private static void RefreshRendererStatus()
         {
-            if (_isExporting) return;
-            var notification = NotificationBase.ShowNotification<YesNoNotification>();
-            if (notification == null) return;
-            notification.Title = Translations.Translate("RENDERER_EXTRACT_CONFIRM");
-            notification.AddParas(Translations.Translate("RENDERER_EXTRACT_CONFIRM_GUIDE"));
-            notification.NoButton.text = Translations.Translate("RENDERER_OPEN_HELP");
-            notification.NoButton.eventClicked += (component, click) => OpenManualInstallHelp();
-            notification.YesButton.text = Translations.Translate("RENDERER_CHECK_AND_OPEN");
-            notification.YesButton.eventClicked += (component, click) => CheckAndOpenRenderer();
-        }
-
-        private static void CheckAndOpenRenderer()
-        {
-            if (_isExporting) return;
-            if (!RefreshRendererStatus())
-            {
-                SetStatusNeutral(Translations.Translate("RENDERER_NOT_FOUND"));
-                var notification = NotificationBase.ShowNotification<YesNoNotification>();
-                if (notification == null) return;
-                notification.Title = Translations.Translate("CHECK_RENDERER_STATUS");
-                notification.AddParas(Translations.Translate("RENDERER_NOT_FOUND"));
-                notification.NoButton.text = Translations.Translate("NOTE_CLOSE");
-                notification.YesButton.text = Translations.Translate("RENDERER_OPEN_HELP");
-                notification.YesButton.eventClicked += (component, click) => OpenManualInstallHelp();
-                return;
-            }
-            SetStatusNeutral(_rendererStatusMessage);
             try
             {
-                string output = CSLModernMapConfig.LoadOrDefault().GetOutputDirPath();
-                string root = Path.Combine(output, "Renderer");
-                string executable = RendererPayloadInstaller.FindManualExecutable(root)
-                    ?? RendererPayloadInstaller.FindManualExecutable(output)
-                    ?? Path.Combine(Path.Combine(root, CSLModernMap.MOD_VERSION), "CSLModernMapRenderer.exe");
-                LaunchWindowsRenderer(executable, _rendererRetryMapPath);
-                SetStatus(Translations.Translate("RENDERER_OPENED"), false);
+                if (IsMacClient)
+                {
+                    var app = MacRenderer.Find(CSLModernMapConfig.LoadOrDefault().GetOutputDirPath());
+                    _rendererStatusMessage = Translations.Translate(app == null ? "RENDERER_NOT_INSTALLED" :
+                        app.NeedsUpdate(CSLModernMap.MOD_VERSION) ? "RENDERER_UPDATE_AVAILABLE" : "RENDERER_INSTALLED");
+                }
+                else
+                {
+                    PackageStatus status = new WindowsRenderer(GetModDirPath()).Status();
+                    _rendererStatusMessage = Translations.Translate(status == PackageStatus.Ready ? "RENDERER_INSTALLED"
+                        : status == PackageStatus.Update ? "RENDERER_UPDATE_AVAILABLE" : "RENDERER_NOT_INSTALLED");
+                }
+            }
+            catch (Exception error) { _rendererStatusMessage = error.Message; }
+            RefreshSummaryUI();
+        }
+
+        private static void OpenWindowsRenderer(bool offerInstallation = true)
+        {
+            try
+            {
+                var package = new WindowsRenderer(GetModDirPath());
+                bool opened = package.Open(_rendererRetryMapPath, offerInstallation);
+                string key = opened ? (_rendererRetryMapPath == null ? "RENDERER_OPENED" : "EXPORT_OPEN_SUCCEEDED")
+                    : (offerInstallation ? "MSIX_INSTALL_HINT" : "RENDERER_NOT_INSTALLED");
+                if (opened) _rendererRetryMapPath = null;
+                SetStatus((!opened && _rendererRetryMapPath != null ? Translations.Translate("EXPORT_SUCCESS_STATUS") + "\n" : "")
+                    + Translations.Translate(key) + ExportWarningText(), false);
+                RefreshRendererStatus();
             }
             catch (Exception error)
             {
-                AlgernonCommons.Logging.Error("[renderer] Manual installation launch failed", error.ToString());
-                SetStatus(error.Message, true);
+                AlgernonCommons.Logging.Error("[renderer] MSIX", error.ToString());
+                SetStatus((_rendererRetryMapPath == null ? "" : Translations.Translate("EXPORT_SUCCESS_STATUS") + "\n")
+                    + error.Message, true);
             }
         }
 
-        private static bool RefreshRendererStatus()
-        {
-            bool ready;
-            string status = ReadRendererStatus(out ready);
-            if (ready) _lastRendererInstallationError = null;
-            _rendererStatusMessage = !ready && !string.IsNullOrEmpty(_lastRendererInstallationError)
-                ? string.Format(Translations.Translate("RENDERER_WAITING_FAILED"), _lastRendererInstallationError)
-                : status;
-            RefreshSummaryUI();
-            return ready;
-        }
-
-        private static string ReadRendererStatus(out bool ready)
-        {
-            ready = false;
-            if (IsMacClient)
-            {
-                string app = FindMacApp(CSLModernMapConfig.LoadOrDefault().GetOutputDirPath());
-                if (string.IsNullOrEmpty(app)) return Translations.Translate("RENDERER_NOT_INSTALLED");
-                ready = true;
-                return Translations.Translate("RENDERER_INSTALLED");
-            }
-            string outputDirectory = CSLModernMapConfig.LoadOrDefault().GetOutputDirPath();
-            string root = Path.Combine(outputDirectory, "Renderer");
-            if (RendererPayloadInstaller.FindManualExecutable(root) != null
-                || RendererPayloadInstaller.FindManualExecutable(outputDirectory) != null)
-            {
-                ready = true;
-                return Translations.Translate("RENDERER_MANUAL_INSTALLED");
-            }
-            try
-            {
-                ready = RendererPayloadInstaller.IsCurrentInstallation(GetModDirPath(), root);
-                return Translations.Translate(ready ? "RENDERER_INSTALLED"
-                    : Directory.Exists(root) ? "RENDERER_UPDATE_AVAILABLE" : "RENDERER_NOT_INSTALLED");
-            }
-            catch (Exception ex) { return ex.Message; }
-        }
-
-        /// <summary>后台完成载荷校验/解压并启动 renderer；不直接访问任何游戏 UI。</summary>
-        private static void BeginWindowsRendererTask(string mapPath, string modDirectory, bool installOnly)
-        {
-            _rendererRetryMapPath = mapPath;
-            string mapOutputDirectory = installOnly ? CSLModernMapConfig.LoadOrDefault().GetOutputDirPath() : Path.GetDirectoryName(mapPath);
-            _rendererInstallOnly = installOnly;
-            string rendererInstallRoot = string.IsNullOrEmpty(mapOutputDirectory)
-                ? null
-                : Path.Combine(mapOutputDirectory, "Renderer");
-            lock (ProgressLock)
-            {
-                _progressPercent = 0;
-                _progressStageKey = "RENDERER_PROGRESS_CHECKING";
-                _progressVisible = true;
-                _completionPending = false;
-                _completionErrorKey = string.Empty;
-                _completionDetail = string.Empty;
-                _manualInstallDirectory = null;
-                _manualInstallModDirectory = modDirectory;
-            }
-            _hideProgressAt = -1f;
-
-            Thread worker = new Thread(delegate()
-            {
-                try
-                {
-                    string rendererPath = RendererPayloadInstaller.EnsureInstalled(
-                        modDirectory, rendererInstallRoot, ReportRendererProgress, installOnly);
-                    if (installOnly) { CompleteRendererTask(true, string.Empty, string.Empty); return; }
-                    try
-                    {
-                        LaunchWindowsRenderer(rendererPath, mapPath);
-                    }
-                    catch (Exception error)
-                    {
-                        string detail = RendererLaunchDiagnostics.Failure("Process.Start", error);
-                        AlgernonCommons.Logging.Error("[renderer] " + detail + "; "
-                            + RendererLaunchDiagnostics.Context(rendererPath, CSLModernMap.MOD_VERSION, Path.GetDirectoryName(mapPath)),
-                            error.ToString());
-                        CompleteRendererTask(false, "RENDERER_PREPARE_FAILED", detail);
-                        return;
-                    }
-                    CompleteRendererTask(true, string.Empty, string.Empty);
-                }
-                catch (FileNotFoundException ex)
-                {
-                    AlgernonCommons.Logging.Error("[renderer] Automatic installation failed", ex.ToString());
-                    _manualInstallDirectory = mapOutputDirectory;
-                    CompleteRendererTask(
-                        false, "RENDERER_PAYLOAD_MISSING", ex.Message);
-                }
-                catch (InvalidDataException ex)
-                {
-                    AlgernonCommons.Logging.Error("[renderer] Automatic installation failed", ex.ToString());
-                    _manualInstallDirectory = mapOutputDirectory;
-                    CompleteRendererTask(
-                        false, "RENDERER_PAYLOAD_INVALID", ex.Message);
-                }
-                catch (Exception ex)
-                {
-                    AlgernonCommons.Logging.Error("[renderer] Automatic installation failed", ex.ToString());
-                    _manualInstallDirectory = mapOutputDirectory;
-                    CompleteRendererTask(
-                        false, "RENDERER_PREPARE_FAILED",
-                        ex.GetType().Name + ": " + ex.Message);
-                }
-            });
-            worker.IsBackground = true;
-            worker.Name = "CSLModernMap Renderer Installer";
-            worker.Start();
-        }
-
-        private static void LaunchWindowsRenderer(string executable, string mapPath)
-        {
-            var psi = new ProcessStartInfo(executable,
-                string.IsNullOrEmpty(mapPath) ? "gui" : "gui " + QuoteArgument(mapPath)) { UseShellExecute = false };
-            string workDir = string.IsNullOrEmpty(mapPath) ? Path.GetDirectoryName(executable) : Path.GetDirectoryName(mapPath);
-            if (!string.IsNullOrEmpty(workDir) && Directory.Exists(workDir)) psi.WorkingDirectory = workDir;
-            using (Process process = Process.Start(psi)) { }
-        }
-
-        private static void ReportRendererProgress(int percent, string stageKey)
+        private static void ReportExportProgress(int percent, string stageKey)
         {
             lock (ProgressLock)
             {
@@ -610,100 +413,58 @@ namespace CSLModernMap.UI
             }
         }
 
-        private static void CompleteRendererTask(
-            bool success, string errorKey, string detail)
-        {
-            lock (ProgressLock)
-            {
-                if (success)
-                {
-                    _progressPercent = 100;
-                    _progressStageKey = "RENDERER_PROGRESS_READY";
-                }
-                _progressVisible = true;
-                _completionSuccess = success;
-                _completionErrorKey = errorKey;
-                _completionDetail = detail;
-                _completionPending = true;
-            }
-        }
-
         /// <summary>内嵌的 macOS 安装指南逻辑名（与 csproj 的 LogicalName 一致）。</summary>
         private const string MAC_GUIDE_RESOURCE = "CSLModernMap.mac-guide.html";
 
-        /// <summary>
-        /// macOS 渲染器入口：不做任何下载。若已安装了旧版
-        /// "CSLModernMap Renderer.app"（优先 /Applications，兼容旧版输出目录位置），
-        /// 直接启动；否则把内嵌的安装指南抽取到输出目录并用默认浏览器打开
-        /// （本地页面，不依赖外网托管）。
-        /// </summary>
-        private static void LaunchMacRendererCore(string mapPath)
+        private static void LaunchMacRendererCore(string mapPath, bool offerInstallation = true)
         {
+            _rendererRetryMapPath = mapPath;
             string outputDir = string.IsNullOrEmpty(mapPath) ? CSLModernMapConfig.LoadOrDefault().GetOutputDirPath() : Path.GetDirectoryName(mapPath);
-            Directory.CreateDirectory(outputDir);
-            string appDir = FindMacApp(outputDir);
-
-            if (!string.IsNullOrEmpty(appDir))
-            {
-                try
-                {
-                    if (string.IsNullOrEmpty(mapPath)) { SetStatus(Translations.Translate("RENDERER_INSTALL_SUCCEEDED"), false); RefreshRendererStatus(); return; }
-                    ProcessStartInfo psi = new ProcessStartInfo(
-                        "/usr/bin/open",
-                        "-n " + QuoteArgument(appDir) + " --args gui " + QuoteArgument(mapPath));
-                    psi.UseShellExecute = false;
-                    Process.Start(psi);
-                    RefreshRendererStatus();
-                    SetStatus(Translations.Translate("MAC_RENDERER_STARTED") + "\n"
-                        + Translations.Translate("SAVE_PATH") + mapPath, false);
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    SetStatus(Translations.Translate("MAC_RENDERER_START_FAILED") + ex.Message, true);
-                    return;
-                }
-            }
-
-            // 未安装时打开本地安装指南。
             try
             {
-                string guidePath = MaterializeMacGuide(outputDir);
-                Process.Start(new ProcessStartInfo(guidePath) { UseShellExecute = true });
-                SetStatus(Translations.Translate("MAC_GUIDE_OPENED") + "\n"
-                    + Translations.Translate("SAVE_PATH") + mapPath, false);
+                var app = MacRenderer.Find(outputDir);
+                if (app == null)
+                {
+                    if (offerInstallation) OpenMacGuide(outputDir, mapPath);
+                    else SetStatusNeutral(Translations.Translate("RENDERER_NOT_INSTALLED"));
+                    return;
+                }
+                if (offerInstallation && app.NeedsUpdate(CSLModernMap.MOD_VERSION))
+                {
+                    string message = string.Format(Translations.Translate("MAC_UPDATE_PROMPT"),
+                        string.IsNullOrEmpty(app.DisplayVersion) ? "?" : app.DisplayVersion, CSLModernMap.MOD_VERSION);
+                    SetStatusNeutral(message);
+                    var dialog = NotificationBase.ShowNotification<YesNoNotification>();
+                    if (dialog == null) { OpenMacGuide(outputDir, mapPath); return; }
+                    dialog.Title = Translations.Translate("RENDERER_UPDATE_AVAILABLE");
+                    dialog.AddParas(message);
+                    dialog.YesButton.text = Translations.Translate("MAC_DOWNLOAD");
+                    dialog.NoButton.text = Translations.Translate("NOTE_CLOSE");
+                    dialog.YesButton.eventClick += (component, click) => OpenMacGuide(outputDir, mapPath);
+                    return;
+                }
+                var arguments = "-n " + QuoteArgument(app.PathName);
+                if (!string.IsNullOrEmpty(mapPath)) arguments += " --args gui " + QuoteArgument(mapPath);
+                using (Process.Start(new ProcessStartInfo("/usr/bin/open", arguments) { UseShellExecute = false })) { }
+                _rendererRetryMapPath = null;
+                RefreshRendererStatus();
+                SetStatus(Translations.Translate("RENDERER_OPENED")
+                    + (string.IsNullOrEmpty(mapPath) ? "" : "\n" + Translations.Translate("SAVE_PATH") + mapPath), false);
             }
-            catch (Exception ex)
-            {
-                SetStatus(Translations.Translate("MAC_GUIDE_FAILED") + ex.Message, true);
-            }
+            catch (Exception ex) { SetStatus(ex.Message, true); }
         }
 
-        /// <summary>
-        /// 定位已安装的 .app：优先 /Applications（Release 的 DMG 拖拽安装目标），
-        /// 兼容旧版 Map 输出目录同层位置。返回 .app 绝对路径；未找到返回空串。
-        /// </summary>
-        private static string FindMacApp(string outputDir)
+        private static void OpenMacGuide(string outputDir, string mapPath)
         {
-            string[] candidates = new string[2];
-            candidates[0] = "/Applications/CSLModernMap Renderer.app";
-            if (!string.IsNullOrEmpty(outputDir))
+            try
             {
-                candidates[1] = Path.Combine(outputDir, "CSLModernMap Renderer.app");
+                Directory.CreateDirectory(outputDir);
+                string page = MaterializeMacGuide(outputDir);
+                using (Process.Start(new ProcessStartInfo("/usr/bin/open", QuoteArgument(page)) { UseShellExecute = false })) { }
+                SetStatus(Translations.Translate("MAC_DOWNLOAD")
+                    + (string.IsNullOrEmpty(mapPath) ? "" : "\n" + Translations.Translate("SAVE_PATH") + mapPath), false);
             }
-            foreach (string candidate in candidates)
-            {
-                if (string.IsNullOrEmpty(candidate))
-                {
-                    continue;
-                }
-                string plist = Path.Combine(Path.Combine(candidate, "Contents"), "Info.plist");
-                if (File.Exists(plist))
-                {
-                    return candidate;
-                }
-            }
-            return string.Empty;
+            catch (Exception error) { SetStatus(error.Message, true); }
         }
 
         /// <summary>把内嵌的安装指南抽取到输出目录并替换版本占位符，返回本地文件路径。</summary>
@@ -815,6 +576,10 @@ namespace CSLModernMap.UI
                 if (!object.ReferenceEquals(_rendererButton, null))
                 {
                     _rendererButton.isEnabled = enabled;
+                }
+                if (!object.ReferenceEquals(_openRendererButton, null))
+                {
+                    _openRendererButton.isEnabled = enabled;
                 }
                 if (!object.ReferenceEquals(_installRendererButton, null))
                 {

@@ -67,14 +67,14 @@ namespace CSLModernMap.Settings
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.RendererStatus)), m_Entries["OptionDesc.RendererStatus"] },
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.InstallRenderer)), m_Entries["OptionLabel.InstallRenderer"] },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.InstallRenderer)), m_Entries["OptionDesc.InstallRenderer"] },
-                { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.OpenRendererFolder)), m_Entries["OptionLabel.OpenRendererFolder"] },
-                { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.OpenRendererFolder)), m_Entries["OptionDesc.OpenRendererFolder"] },
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.Version)), m_Entries["OptionLabel.Version"] },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.Version)), m_Entries["OptionDesc.Version"] },
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.ExportAndOpen)), m_Entries["OptionLabel.ExportAndOpen"] },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.ExportAndOpen)), m_Entries["OptionDesc.ExportAndOpen"] },
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.ExportCurrentCity)), m_Entries["OptionLabel.ExportCurrentCity"] },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.ExportCurrentCity)), m_Entries["OptionDesc.ExportCurrentCity"] },
+                { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.OpenRenderer)), m_Entries["OptionLabel.OpenRenderer"] },
+                { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.OpenRenderer)), m_Entries["OptionDesc.OpenRenderer"] },
 #if CS2_SATELLITE_TRIALS
                 { m_Settings.GetOptionLabelLocaleID(nameof(CSLModernMapSettings.RunSatelliteTrials)), m_Chinese ? "卫星影像多方案测试" : "Run satellite capture trials" },
                 { m_Settings.GetOptionDescLocaleID(nameof(CSLModernMapSettings.RunSatelliteTrials)), m_Chinese

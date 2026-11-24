@@ -15,3 +15,6 @@ __pycache__/
 *.cslmr
 *.cslmr.sha256
 renderer-version.txt
+
+/CS2/CSLModernMapRenderer.msix
+/CS2/renderer-package.txt

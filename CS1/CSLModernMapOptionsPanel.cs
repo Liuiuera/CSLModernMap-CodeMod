@@ -25,11 +25,13 @@ namespace CSLModernMap.UI
             open.textColor = open.focusedTextColor = open.hoveredTextColor = open.pressedTextColor = new Color32(25, 48, 64, 255);
             open.eventClicked += (component, click) => ExportActions.DoExportFromRendererButton();
             y += 58f;
-            float exportWidth = Mathf.Min(200f, buttonWidth);
-            UILabel exportHint = Label("EXPORT_FILE_HINT", width - exportWidth - 12f, ref y, 42f);
-            exportHint.textColor = new Color32(180, 200, 215, 255);
-            UIButton export = Button("EXPORT_MAP", width - exportWidth, y - 42f, exportWidth);
+            float exportWidth = (width - 12f) / 2f;
+            UIButton export = Button("EXPORT_MAP", 0f, y, exportWidth);
+            export.tooltip = Translations.Translate("EXPORT_FILE_HINT");
             export.eventClicked += (component, click) => ExportActions.DoExport(RendererTarget.None);
+            UIButton openRenderer = Button("OPEN_RENDERER", exportWidth + 12f, y, exportWidth);
+            openRenderer.eventClicked += (component, click) => ExportActions.OpenRenderer();
+            y += 42f;
             UILabel hint = Label(ExportActions.SafeTmpeAvailable() ? "TMPE_READY_HINT" : "TMPE_OPTIONAL_HINT", width, ref y, 46f);
             hint.textColor = new Color32(180, 200, 215, 255);
 
@@ -72,10 +74,15 @@ namespace CSLModernMap.UI
 
             Title("RENDERER_GROUP", width, ref y);
             UILabel rendererStatus = Label("RENDERER_STATUS", width, ref y, 64f);
-            UIButton install = Button("INSTALL_RENDERER", 0f, y, buttonWidth);
+            if (!ExportActions.IsMacClient)
+                Label("MSIX_PERMISSION_NOTICE", width, ref y, 58f);
+            UIButton install = Button("VIEWER_OPEN", 0f, y, ExportActions.IsMacClient ? buttonWidth : width);
             install.eventClicked += (component, click) => ExportActions.InstallRenderer();
-            UIButton rendererFolder = Button("OPEN_RENDERER_FOLDER", buttonWidth + 12f, y, buttonWidth);
-            rendererFolder.eventClicked += (component, click) => ExportActions.OpenRendererFolder();
+            if (ExportActions.IsMacClient)
+            {
+                UIButton folder = Button("OPEN_RENDERER_FOLDER", buttonWidth + 12f, y, buttonWidth);
+                folder.eventClicked += (component, click) => ExportActions.OpenMacApplications();
+            }
             y += 44f;
 
             UISpacers.AddOptionsSpacer(this, 0f, y, width);
@@ -83,7 +90,7 @@ namespace CSLModernMap.UI
             Label("", width, ref y, 28f).text = "CSLModernMap v" + CSLModernMap.MOD_VERSION + "  ·  CMM";
             height = y;
             ExportTaskRunner.Ensure();
-            ExportActions.Register(export, open, install, lastExport, counts, rendererStatus, progress, progressLabel, status);
+            ExportActions.Register(export, open, openRenderer, install, lastExport, counts, rendererStatus, progress, progressLabel, status);
         }
 
         private void Title(string key, float width, ref float y)

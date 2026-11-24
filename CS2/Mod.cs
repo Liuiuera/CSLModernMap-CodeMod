@@ -35,12 +35,15 @@ namespace CSLModernMap
 
         public void OnLoad(UpdateSystem updateSystem)
         {
+            string directory;
             if (GameManager.instance != null && GameManager.instance.modManager != null &&
                 GameManager.instance.modManager.TryGetExecutableAsset(this, out var asset))
             {
-                Systems.RendererLauncher.Initialize(System.IO.Path.GetDirectoryName(asset.path));
+                directory = System.IO.Path.GetDirectoryName(asset.path);
             }
 
+            else directory = System.IO.Path.GetDirectoryName(typeof(Mod).Assembly.Location);
+            Systems.MapExportUISystem.InitializeRenderer(directory);
             updateSystem.UpdateAt<Systems.MapExportUISystem>(SystemUpdatePhase.UIUpdate);
 
             Settings = new CSLModernMapSettings(this);

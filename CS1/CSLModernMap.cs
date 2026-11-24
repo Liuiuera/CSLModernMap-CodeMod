@@ -140,6 +140,7 @@ namespace CSLModernMap
             string before = WhatsNew.LastNotifiedVersionString;
             XMLFileUtils.Load<CSLModernMapConfig>(CSLModernMapConfig.SettingsFileName);
             CSLModernMapConfig.MigrateLegacyLastSeenVersion();
+            UI.ExportActions.RegisterExportDirectory();
 
             // 迁移写入了已看版本时立即持久化，避免下次启动重复迁移/重复弹窗。
             if (WhatsNew.LastNotifiedVersionString != before)
