@@ -61,6 +61,7 @@ namespace CSLModernMap.UI
             includeSatellite.isChecked = satelliteConfig.SatelliteEnabled;
             includeSatellite.eventCheckChanged += (component, value) => { satelliteConfig.SatelliteEnabled = value; satelliteConfig.Save(); };
             y += 34f;
+            Label("SATELLITE_EXPORT_HINT", width, ref y, 58f);
             Title("OUTPUT_GROUP", width, ref y);
             UILabel path = Label("", width, ref y, 50f);
             path.text = CSLModernMapConfig.LoadOrDefault().GetOutputDirPath();
