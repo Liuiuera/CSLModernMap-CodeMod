@@ -146,9 +146,6 @@ namespace AlgernonCommons
             // Perform any post-loading actions.
             LoadedActions(mode);
 
-            // Set up options panel event handler (need to redo this now that options panel has been reset after loading into game).
-            OptionsPanelManager<TOptionsPanel>.OptionsEventHook();
-
             // Display update notification.
             WhatsNew.ShowWhatsNew();
 

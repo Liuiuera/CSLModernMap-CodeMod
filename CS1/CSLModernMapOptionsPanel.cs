@@ -8,9 +8,9 @@ namespace CSLModernMap.UI
 {
     public sealed class CSLModernMapOptionsPanel : OptionsPanelBase
     {
-        protected override void Setup()
+        internal override void Setup()
         {
-            float width = OptionsPanelManager<CSLModernMapOptionsPanel>.PanelWidth;
+            float width = this.width;
             float buttonWidth = Mathf.Min(260f, (width - 12f) / 2f);
             float y = 0f;
             UILabel heading = Label("PANEL_TITLE", width, ref y, 32f);
@@ -23,19 +23,17 @@ namespace CSLModernMap.UI
             open.hoveredColor = new Color32(166, 207, 229, 255);
             open.pressedColor = new Color32(122, 170, 199, 255);
             open.textColor = open.focusedTextColor = open.hoveredTextColor = open.pressedTextColor = new Color32(25, 48, 64, 255);
-            open.eventClicked += (component, click) => ExportActions.DoExportFromRendererButton();
+            open.eventClicked += (component, click) => ExportActions.DoExport(openViewer: true);
             y += 58f;
             float exportWidth = (width - 12f) / 2f;
             UIButton export = Button("EXPORT_MAP", 0f, y, exportWidth);
             export.tooltip = Translations.Translate("EXPORT_FILE_HINT");
-            export.eventClicked += (component, click) => ExportActions.DoExport(RendererTarget.None);
+            export.eventClicked += (component, click) => ExportActions.DoExport(openViewer: false);
             UIButton openRenderer = Button("OPEN_RENDERER", exportWidth + 12f, y, exportWidth);
             openRenderer.eventClicked += (component, click) => ExportActions.OpenRenderer();
             y += 42f;
-            UILabel hint = Label(ExportActions.SafeTmpeAvailable() ? "TMPE_READY_HINT" : "TMPE_OPTIONAL_HINT", width, ref y, 46f);
+            UILabel hint = Label("TMPE_READY_HINT", width, ref y, 46f);
             hint.textColor = new Color32(180, 200, 215, 255);
-
-
 
             Title("STATUS_GROUP", width, ref y);
             UILabel status = Label("EXPORT_IDLE", width, ref y, 96f);
@@ -77,7 +75,7 @@ namespace CSLModernMap.UI
             UILabel rendererStatus = Label("RENDERER_STATUS", width, ref y, 64f);
             if (!ExportActions.IsMacClient)
                 Label("MSIX_PERMISSION_NOTICE", width, ref y, 58f);
-            UIButton install = Button("VIEWER_OPEN", 0f, y, ExportActions.IsMacClient ? buttonWidth : width);
+            UIButton install = Button("VIEWER_INSTALL_UPDATE", 0f, y, ExportActions.IsMacClient ? buttonWidth : width);
             install.eventClicked += (component, click) => ExportActions.InstallRenderer();
             if (ExportActions.IsMacClient)
             {
@@ -90,8 +88,19 @@ namespace CSLModernMap.UI
             y += 14f;
             Label("", width, ref y, 28f).text = "CSLModernMap v" + CSLModernMap.MOD_VERSION + "  ·  CMM";
             height = y;
-            ExportTaskRunner.Ensure();
-            ExportActions.Register(export, open, openRenderer, install, lastExport, counts, rendererStatus, progress, progressLabel, status);
+
+            void RefreshStatus()
+            {
+                if (isVisible && CSLModernMapLoadingExtension.IsLevelLoaded)
+                    hint.text = Translations.Translate(ExportActions.SafeTmpeAvailable() ? "TMPE_READY_HINT" : "TMPE_OPTIONAL_HINT");
+                ExportActions.Register(export, open, openRenderer, install, lastExport, counts, rendererStatus, progress, progressLabel, status);
+            }
+
+            eventVisibilityChanged += (component, visible) =>
+            {
+                if (visible) RefreshStatus();
+            };
+            RefreshStatus();
         }
 
         private void Title(string key, float width, ref float y)

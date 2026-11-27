@@ -66,7 +66,7 @@ namespace CSLModernMap.Settings
         [SettingsUIDisableByCondition(typeof(CSLModernMapSettings), nameof(IsExportBusy))]
         public bool OpenRenderer
         {
-            set => Systems.MapExportUISystem.OpenRenderer(offerInstallation: false);
+            set => Systems.MapExportUISystem.OpenRenderer();
         }
 
 #if CS2_SATELLITE_TRIALS
@@ -98,7 +98,7 @@ namespace CSLModernMap.Settings
         [SettingsUIDisableByCondition(typeof(CSLModernMapSettings), nameof(IsExportBusy))]
         public bool InstallRenderer
         {
-            set => Systems.MapExportUISystem.OpenRenderer();
+            set => Systems.MapExportUISystem.InstallRenderer();
         }
 
         [SettingsUISection(RendererTab, RendererGroup)]
@@ -116,7 +116,7 @@ namespace CSLModernMap.Settings
             set => Systems.MapExportUISystem.RequestCopyExportFolder();
         }
 
-        public bool IsExportBusy => Systems.ExportReport.IsBusy;
+        public bool IsExportBusy => Systems.MapExportUISystem.IsExportBusy;
 
         public bool IsRendererUnsupported => !Systems.MapExportUISystem.RendererSupported;
 

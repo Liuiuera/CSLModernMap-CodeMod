@@ -33,6 +33,7 @@ namespace AlgernonCommons.Notifications
 
         // Reference constants.
         private const int DefaultButton = 1;
+        private const string ModalEffectAnimation = "ModalEffect67419";
 
         // Panel components.
         private UILabel _titleLabel;
@@ -84,12 +85,11 @@ namespace AlgernonCommons.Notifications
         /// </summary>
         protected float ContentWidth => ScrollableContent.width - ScrollableContent.autoLayoutPadding.left - ScrollableContent.autoLayoutPadding.right;
 
-        /// <summary>
-        /// Show modal notification.
-        /// </summary>
-        /// <typeparam name="T">Notification type to show.</typeparam>
-        /// <returns>New Notification (null if none).</returns>
-        public static T ShowNotification<T>()
+        internal delegate void InitializeNotification<T>(T notification) where T : NotificationBase;
+
+        public static T ShowNotification<T>() where T : NotificationBase => ShowNotification<T>(null);
+
+        internal static T ShowNotification<T>(InitializeNotification<T> initialize)
         where T : NotificationBase
         {
             // Get global view.
@@ -106,41 +106,46 @@ namespace AlgernonCommons.Notifications
                 name = "AlgernonCommons.Notification",
             };
             gameObject.transform.parent = view.transform;
-            NotificationBase notification = null;
+            T notification = null;
+            bool pushed = false;
             try
             {
                 // Create new gameobject and attach the notification.
                 notification = gameObject.AddComponent<T>();
+                initialize?.Invoke(notification);
 
                 // Display modal notification.
                 UIView.PushModal(notification);
+                pushed = true;
                 notification.Show(true);
                 notification.Focus();
 
                 // Apply modal view effects.
                 if (view.panelsLibraryModalEffect is UIComponent modalEffect)
                 {
+                    ValueAnimator.Cancel(ModalEffectAnimation);
                     modalEffect.FitTo(null);
+                    modalEffect.zOrder = notification.zOrder - 1;
                     if (!modalEffect.isVisible || modalEffect.opacity != 1f)
                     {
                         modalEffect.Show(false);
-                        ValueAnimator.Animate("ModalEffect67419", (value) => modalEffect.opacity = value, new AnimatedFloat(0f, 1f, 0.7f, EasingType.CubicEaseOut));
+                        ValueAnimator.Animate(ModalEffectAnimation, (value) => modalEffect.opacity = value, new AnimatedFloat(0f, 1f, 0.7f, EasingType.CubicEaseOut));
                     }
                 }
 
-                return notification as T;
+                return notification;
             }
             catch (Exception e)
             {
                 Logging.LogException(e, "exception creating notification type ", typeof(T));
 
-                // Cleanup if possible.
-                CloseNotification(notification);
-
-                if (gameObject != null)
+                if (pushed)
                 {
-                    GameObject.Destroy(gameObject);
-                    gameObject = null;
+                    CloseNotification(notification);
+                }
+                else
+                {
+                    Destroy(gameObject);
                 }
 
                 return null;
@@ -153,8 +158,7 @@ namespace AlgernonCommons.Notifications
         /// <param name="notification">Notification instance to close.</param>
         public static void CloseNotification(NotificationBase notification)
         {
-            // Null check.
-            if (notification == null)
+            if (notification == null || UIView.GetModalComponent() != notification)
             {
                 return;
             }
@@ -166,12 +170,14 @@ namespace AlgernonCommons.Notifications
             UIView currentView = UIView.GetAView();
             if (currentView && currentView.panelsLibraryModalEffect is UIComponent modalEffect)
             {
+                ValueAnimator.Cancel(ModalEffectAnimation);
                 if (!UIView.HasModalInput())
                 {
-                    ValueAnimator.Animate("ModalEffect67419", (value) => modalEffect.opacity = value, new AnimatedFloat(1f, 0f, 0.7f, EasingType.CubicEaseOut), () => modalEffect.Hide());
+                    modalEffect.Hide();
                 }
                 else
                 {
+                    modalEffect.opacity = 1f;
                     modalEffect.zOrder = UIView.GetModalComponent().zOrder - 1;
                 }
             }

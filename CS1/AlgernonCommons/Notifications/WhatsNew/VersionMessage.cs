@@ -5,7 +5,6 @@
 
 namespace AlgernonCommons.Notifications
 {
-    using System;
     using System.Collections.Generic;
     using AlgernonCommons.Translation;
     using ColossalFramework.UI;
@@ -75,20 +74,10 @@ namespace AlgernonCommons.Notifications
             // Add message elements as separate list items.
             for (int i = 0; i < message.Messages.Length; ++i)
             {
-                try
-                {
-                    // Message text is either a translation key or direct text, depending on the messageKeys setting.
-                    ListNotification.ListItem newMessageLabel = AddUIComponent<ListNotification.ListItem>();
-                    _listItems.Add(newMessageLabel);
-                    newMessageLabel.Text = message.MessagesAreKeys ? Translations.Translate(message.Messages[i]) : message.Messages[i];
-
-                    // Make sure initial width is set properly.
-                    newMessageLabel.width = this.width;
-                }
-                catch (Exception e)
-                {
-                    Logging.LogException(e, "exception showing what's new message");
-                }
+                ListNotification.ListItem newMessageLabel = AddUIComponent<ListNotification.ListItem>();
+                _listItems.Add(newMessageLabel);
+                newMessageLabel.Text = message.MessagesAreKeys ? Translations.Translate(message.Messages[i]) : message.Messages[i];
+                newMessageLabel.width = width;
             }
 
             // Always start maximized.

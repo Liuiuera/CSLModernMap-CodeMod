@@ -42,13 +42,6 @@ namespace CSLModernMap.Systems
 
         private int m_ShownExportProgress;
 
-        private static string s_RendererRetryMapPath;
-        private static string s_ModDirectory;
-        private static string s_RendererStatusKey;
-        private static string s_RendererError;
-        internal static string RendererStatus => s_RendererError ?? (s_RendererStatusKey == null ? "" :
-            Settings.ModText.Get(s_RendererStatusKey));
-
         private static bool s_OpenFolderRequested;
 
         private static bool s_CopyFolderRequested;
@@ -252,17 +245,7 @@ namespace CSLModernMap.Systems
                 return;
             }
 
-            if (ExportReport.IsBusy)
-                return;
-
-            var game = GameManager.instance;
-            if (game != null && game.gameMode == GameMode.Game && Mod.Settings.IncludeSatelliteImage)
-            {
-                system.ShowSatelliteSaveReminder(game, openAfterwards);
-                return;
-            }
-
-            system.EnqueueExport(openAfterwards, withSatellite: false);
+            if (!IsExportBusy) system.PrepareExport(openAfterwards);
         }
 
         private void EnqueueExport(bool openAfterwards, bool withSatellite)
@@ -271,54 +254,6 @@ namespace CSLModernMap.Systems
             m_ExportWithSatellite = withSatellite;
             m_ExportRequested = true;
             ExportReport.MarkQueued();
-        }
-
-        internal static bool RendererSupported => System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(
-            System.Runtime.InteropServices.OSPlatform.Windows);
-
-        internal static void InitializeRenderer(string directory)
-        {
-            s_ModDirectory = directory;
-            s_RendererRetryMapPath = null;
-            if (RendererSupported) ExportPaths.RegisterExportDirectory();
-            RefreshRendererStatus();
-        }
-
-        private static void RefreshRendererStatus()
-        {
-            s_RendererError = null;
-            if (!RendererSupported)
-            {
-                s_RendererStatusKey = "CSLModernMap.UI.MapExportUISystem.RendererStatus.5FC5374073";
-                return;
-            }
-            try
-            {
-                PackageStatus status = new WindowsRenderer(s_ModDirectory).Status();
-                s_RendererStatusKey = status == PackageStatus.Ready ? "CSLModernMap.UI.Msix.Ready"
-                    : status == PackageStatus.Update ? "CSLModernMap.UI.Msix.Update" : "CSLModernMap.UI.Msix.Missing";
-            }
-            catch (Exception error) { s_RendererError = error.Message; }
-        }
-
-        internal static void OpenRenderer(bool offerInstallation = true)
-        {
-            if (!RendererSupported) return;
-            try
-            {
-                bool opened = new WindowsRenderer(s_ModDirectory).Open(s_RendererRetryMapPath, offerInstallation);
-                if (opened) s_RendererRetryMapPath = null;
-                RefreshRendererStatus();
-                if (!opened && offerInstallation) s_RendererStatusKey = "CSLModernMap.UI.Msix.InstallHint";
-                string message = opened ? Settings.ModText.Get("CSLModernMap.UI.Msix.Opened") : RendererStatus;
-                s_Instance?.ShowNotification(RendererNoticeId, message);
-            }
-            catch (Exception error)
-            {
-                Mod.log.Error("[renderer] MSIX: " + error);
-                s_RendererError = error.Message;
-                s_Instance?.ShowNotification(RendererNoticeId, RendererStatus);
-            }
         }
 
         internal static void RequestOpenExportFolder()
@@ -378,14 +313,14 @@ namespace CSLModernMap.Systems
 
         private void BeginExportWrite(ExportResult result, string text, byte[] satellitePng = null)
         {
-            m_ExportProgress = -1;
-            m_ShownExportProgress = -1;
-            ExportReport.MarkRunning("CSLModernMap.UI.ExportProgress.Validating");
+            m_ExportProgress = 0;
+            m_ShownExportProgress = 0;
+            ExportReport.MarkRunning("CSLModernMap.UI.ExportProgress.Writing", 0);
 
             // 后台只处理已采集的数据，不访问 ECS、游戏系统或 UI。
             m_ExportTask = Task.Run(() =>
             {
-                CmmWriter.ValidateAndWrite(result.Path, text,
+                CmmWriter.Write(result.Path, text,
                     progress => Volatile.Write(ref m_ExportProgress, progress), satellitePng);
                 return result;
             });
@@ -399,10 +334,7 @@ namespace CSLModernMap.Systems
                 if (progress != m_ShownExportProgress)
                 {
                     m_ShownExportProgress = progress;
-                    if (progress >= CmmWriter.ArchiveVerificationProgress)
-                        ExportReport.MarkRunning("CSLModernMap.UI.ExportProgress.CheckingArchive");
-                    else
-                        ExportReport.MarkRunning("CSLModernMap.UI.ExportProgress.Writing", progress);
+                    ExportReport.MarkRunning("CSLModernMap.UI.ExportProgress.Writing", progress);
                 }
                 return;
             }
@@ -412,7 +344,7 @@ namespace CSLModernMap.Systems
             try
             {
                 var result = task.GetAwaiter().GetResult();
-                ExportReport.MarkSucceeded(result);
+                ExportReport.MarkSucceeded(result, m_ViewerWarning);
                 Mod.log.Info(string.Format(
                     "[export] CMM地图已写出: {0}（节点={1}，路网={2}，建筑={3}，站点={4}，线路={5}，issues={6}）",
                     result.Path,
@@ -424,12 +356,10 @@ namespace CSLModernMap.Systems
                     result.IssueCount));
                 ShowNotification(ResultNoticeId, ExportReport.ResultNotice(result), ProgressState.Complete, 100);
 
-                if (m_OpenAfterExport)
-                {
-                    m_OpenAfterExport = false;
-                    s_RendererRetryMapPath = result.Path;
+                s_RendererRetryMapPath = m_OpenAfterExport ? result.Path : null;
+                if (m_OpenAfterExport && m_ViewerWarning == null)
                     OpenRenderer();
-                }
+                m_OpenAfterExport = false;
             }
             catch (Exception e)
             {

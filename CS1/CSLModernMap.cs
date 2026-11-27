@@ -10,16 +10,6 @@ using ICities;
 
 namespace CSLModernMap
 {
-    /// <summary>
-    /// CSLModernMap 模组入口。
-    /// 派生 AlgernonCommons.OptionsMod&lt;CSLModernMapOptionsPanel&gt;（源码共享编入，MIT 许可，
-    /// 见 AlgernonCommons/LICENSE.txt）：
-    ///   - ModBase 链路：设置持久化 + WhatsNew 更新通知体系（UIView.PushModal
-    ///     正确接管模态输入，交互可靠）；LoadSettings 必须先于进档时的
-    ///     ShowWhatsNew 执行，由 OnEnabled 基类链路完成；
-    ///   - OptionsMod 链路：实现 OnSettingsUI 并在 OnEnabled 挂接选项面板事件钩子；
-    ///     进档后的重挂与 WhatsNew 触发由 LoadingBase 派生的加载扩展完成。
-    /// </summary>
     public class CSLModernMap : OptionsMod<global::CSLModernMap.UI.CSLModernMapOptionsPanel>, IUserMod
     {
         public const string MOD_VERSION = "6.7.4";

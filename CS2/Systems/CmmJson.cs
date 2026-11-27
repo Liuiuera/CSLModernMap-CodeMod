@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace CSLModernMap.Systems
 {
@@ -126,28 +125,6 @@ namespace CSLModernMap.Systems
                 StringComparer.Ordinal);
 
             return JsonConvert.SerializeObject(sorted, Formatting.None);
-        }
-
-        internal static bool IsWellFormed(
-            string text,
-            out string error)
-        {
-            if (text == null)
-            {
-                error = "文档为空";
-                return false;
-            }
-            try
-            {
-                JToken.Parse(text);
-                error = null;
-                return true;
-            }
-            catch (JsonException exception)
-            {
-                error = exception.Message;
-                return false;
-            }
         }
     }
 }

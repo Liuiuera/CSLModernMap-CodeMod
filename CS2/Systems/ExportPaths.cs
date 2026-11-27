@@ -66,16 +66,6 @@ namespace CSLModernMap.Systems
                 + localTime.ToString("yyyyMMdd-HHmmss-fff", CultureInfo.InvariantCulture)
                 + FileSuffix;
         }
-        internal static string BuildInvalidName(string path)
-        {
-            if (path != null && path.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
-            {
-                path = path.Substring(0, path.Length - ".gz".Length);
-            }
-
-            return path + ".invalid";
-        }
-
         internal static ExportFileInfo? FindNewestExport()
         {
             try

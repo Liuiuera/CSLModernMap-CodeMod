@@ -6,7 +6,6 @@
 namespace AlgernonCommons
 {
     using AlgernonCommons.UI;
-    using ColossalFramework.UI;
     using ICities;
 
     /// <summary>
@@ -29,27 +28,6 @@ namespace AlgernonCommons
         /// Gets the active instance reference.
         /// </summary>
         public static OptionsMod<TOptionsPanel> OptionsInstance { get; private set; }
-
-        /// <summary>
-        /// Called by the game when the mod is enabled.
-        /// </summary>
-        public override void OnEnabled()
-        {
-            base.OnEnabled();
-
-            // Add the options panel event handler for the start screen (to enable/disable options panel based on visibility).
-            // First, check to see if UIView is ready.
-            if (UIView.GetAView() != null)
-            {
-                // It's ready - attach the hook now.
-                OptionsPanelManager<TOptionsPanel>.OptionsEventHook();
-            }
-            else
-            {
-                // Otherwise, queue the hook for when the intro's finished loading.
-                LoadingManager.instance.m_introLoaded += OptionsPanelManager<TOptionsPanel>.OptionsEventHook;
-            }
-        }
 
         /// <summary>
         /// Called by the game when the mod options panel is setup.

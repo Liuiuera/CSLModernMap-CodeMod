@@ -12,29 +12,6 @@ namespace AlgernonCommons.UI
     /// </summary>
     public abstract class OptionsPanelBase : UIPanel
     {
-        // Setup status.
-        private bool _setup = false;
-
-        /// <summary>
-        /// Performs on-demand panel setup.
-        /// </summary>
-        protected abstract void Setup();
-
-        /// <summary>
-        /// Called by the game when visibility changes.
-        /// </summary>
-        protected override void OnVisibilityChanged()
-        {
-            // Setup panel if we haven't already.
-            if (!_setup && isVisible)
-            {
-                Setup();
-
-                // Update status.
-                _setup = true;
-            }
-
-            base.OnVisibilityChanged();
-        }
+        internal abstract void Setup();
     }
 }
