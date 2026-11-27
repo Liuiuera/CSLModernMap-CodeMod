@@ -122,13 +122,13 @@ namespace CSLModernMap.Systems
                 simulation.selectedSpeed = previousSpeed;
             }
 
-            var write = Task.Run(() => CmmWriter.ValidateAndWrite(result.Path, city, null));
+            var write = Task.Run(() => CmmWriter.Write(result.Path, city, null));
             while (!write.IsCompleted)
                 yield return null;
             write.GetAwaiter().GetResult();
             if (failedSamples > 0)
                 throw new InvalidOperationException($"Satellite trials recorded {failedSamples} failed capture(s). See {root}");
-            ExportReport.MarkSucceeded(result);
+            ExportReport.MarkSucceeded(result, viewerWarning: null);
             ShowNotification(SatelliteNoticeId, "Satellite trials finished. " + root);
             Mod.log.Info("[satellite-trials] Finished " + root);
         }

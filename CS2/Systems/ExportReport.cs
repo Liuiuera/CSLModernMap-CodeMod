@@ -90,6 +90,7 @@ namespace CSLModernMap.Systems
         private static string s_RunningStatusKey;
         private static int? s_WritingProgress;
 
+        private static string s_ViewerWarning;
         private static bool s_RecoverAttempted;
 
         internal static bool IsBusy => s_State == ExportState.Queued || s_State == ExportState.Running;
@@ -108,9 +109,10 @@ namespace CSLModernMap.Systems
             s_WritingProgress = writingProgress;
         }
 
-        internal static void MarkSucceeded(ExportResult result)
+        internal static void MarkSucceeded(ExportResult result, string viewerWarning)
         {
-            s_State = result.IssueCount > 0 ? ExportState.SucceededWithWarnings : ExportState.Succeeded;
+            s_ViewerWarning = viewerWarning;
+            s_State = result.IssueCount > 0 || viewerWarning != null ? ExportState.SucceededWithWarnings : ExportState.Succeeded;
             s_FileName = result.FileName;
             s_Time = result.LocalTime;
             s_Nodes = result.NodeCount;
@@ -146,10 +148,12 @@ namespace CSLModernMap.Systems
                     case ExportState.Succeeded:
                         return global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.ExportReport.StatusText.5603E01058");
                     case ExportState.SucceededWithWarnings:
-                        return string.Format(
-                            CultureInfo.InvariantCulture,
-                            global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.ExportReport.StatusText.365411E7D4"),
-                            s_Issues, s_FirstIssue);
+                        var summary = s_Issues == 0
+                            ? Settings.ModText.Get("CSLModernMap.UI.ExportReport.StatusText.5603E01058")
+                            : string.Format(CultureInfo.InvariantCulture,
+                                Settings.ModText.Get("CSLModernMap.UI.ExportReport.StatusText.365411E7D4"),
+                                s_Issues, s_FirstIssue);
+                        return WithViewerWarning(summary);
                     case ExportState.Failed:
                         return (global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.ExportReport.StatusText.C55E9D64E5")) + s_Reason;
                     default:
@@ -198,19 +202,22 @@ global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.ExportReport.CountsTe
         internal static string StartNotice =>
             global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.ExportReport.StartNotice.D8426601FD");
 
+        private static string WithViewerWarning(string message) =>
+            s_ViewerWarning == null ? message : message + "\n" + s_ViewerWarning;
+
         internal static string ResultNotice(ExportResult result)
         {
             if (result.IssueCount > 0)
             {
-                return string.Format(CultureInfo.InvariantCulture,
+                return WithViewerWarning(string.Format(CultureInfo.InvariantCulture,
 global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.ExportReport.ResultNotice.7978DA43CD"),
-                        result.IssueCount, result.FirstIssue, result.FileName);
+                        result.IssueCount, result.FirstIssue, result.FileName));
             }
 
-            return string.Format(CultureInfo.InvariantCulture,
+            return WithViewerWarning(string.Format(CultureInfo.InvariantCulture,
 global::CSLModernMap.Settings.ModText.Get("CSLModernMap.UI.ExportReport.ResultNotice.B802072C00"),
                     result.FileName, result.NodeCount, result.NetworkCount,
-                    result.BuildingCount, result.StopCount, result.LineCount);
+                    result.BuildingCount, result.StopCount, result.LineCount));
         }
 
         internal static string FailureNotice(string reason)

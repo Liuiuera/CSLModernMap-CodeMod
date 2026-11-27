@@ -37,9 +37,11 @@ stage the signed companion viewer MSIX before building CS2 or assembling the CS1
     python tools/pack_cs2_renderer.py --msix path/to/viewer.msix
     python tools/pack_cs2_renderer.py --msix path/to/viewer.msix --target path/to/CS1-release
 
-The staging command writes the MSIX and its application identity. In game, use Export and Open.
-On first use or when an update is needed, finish the Windows installation, then return to the game
-and select Install / Open Viewer. Export Only still just writes the map.
+The staging command writes the MSIX and its application identity. Both export buttons offer
+installation when the viewer is missing. After you return from the installer, the mod checks again.
+If the viewer is still missing, it saves the map and displays a warning. **Export and Open**
+launches the installed viewer after saving. **Install / Update Viewer** opens the installer again,
+including when the same version is already installed.
 The mods do not download required files from the network.
 
 ## License

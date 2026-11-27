@@ -56,18 +56,16 @@ namespace CSLModernMap
             return PackageStatus.Missing;
         }
 
-        internal bool Open(string mapPath, bool offerInstallation = true)
+        internal void Install()
         {
-            PackageStatus status = Status();
-            if (offerInstallation && status != PackageStatus.Ready)
-            {
-                string path = Path.Combine(directory, PackageFile);
-                if (!File.Exists(path)) throw new FileNotFoundException(PackageFile, path);
-                using (Process.Start(new ProcessStartInfo(path) { UseShellExecute = true })) { }
-                return false;
-            }
+            string path = Path.Combine(directory, PackageFile);
+            if (!File.Exists(path)) throw new FileNotFoundException(PackageFile, path);
+            using (Process.Start(new ProcessStartInfo(path) { UseShellExecute = true })) { }
+        }
 
-            if (status == PackageStatus.Missing) return false;
+        internal bool Open(string mapPath)
+        {
+            if (Status() == PackageStatus.Missing) return false;
             Activate(appId, string.IsNullOrEmpty(mapPath) ? "" : "\"" + Path.GetFullPath(mapPath) + "\"");
             return true;
         }

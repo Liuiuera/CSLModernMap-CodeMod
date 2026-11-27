@@ -62,6 +62,7 @@ namespace CSLModernMap
 #if CS2_SATELLITE_TRIALS
             Systems.MapExportUISystem.StopSatelliteTrials();
 #endif
+            Systems.MapExportUISystem.CancelViewerRequests();
             Settings?.UnregisterInOptionsUI();
             Settings = null;
         }

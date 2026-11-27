@@ -4,8 +4,6 @@ using Colossal.Serialization.Entities;
 using Game;
 using Game.SceneFlow;
 using Game.Simulation;
-using Game.UI;
-using Game.UI.Localization;
 using CSLModernMap.Settings;
 using UnityEngine;
 
@@ -15,22 +13,6 @@ namespace CSLModernMap.Systems
     {
         private const float SatelliteDialogCloseDelaySeconds = 0.5f;
         private IEnumerator m_SatelliteExport;
-
-        private void ShowSatelliteSaveReminder(GameManager game, bool openAfterwards)
-        {
-            var dialog = new ConfirmationDialog(
-                LocalizedString.Value(ModText.Get("CSLModernMap.UI.SatelliteSave.Title")),
-                LocalizedString.Value(ModText.Get("CSLModernMap.UI.SatelliteSave.Message")),
-                LocalizedString.Value(ModText.Get("CSLModernMap.UI.SatelliteSave.Continue")),
-                LocalizedString.Value(ModText.Get("CSLModernMap.UI.SatelliteSave.Back")),
-                Array.Empty<LocalizedString>());
-            game.userInterface.appBindings.ShowConfirmationDialog(dialog, result =>
-            {
-                if (result == 0 && ReferenceEquals(s_Instance, this) && !ExportReport.IsBusy
-                    && game == GameManager.instance && game.gameMode == GameMode.Game)
-                    EnqueueExport(openAfterwards, withSatellite: true);
-            });
-        }
 
         internal static void StopSatelliteExport() => s_Instance?.CancelSatelliteExport();
 

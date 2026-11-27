@@ -57,13 +57,12 @@ namespace AlgernonCommons.Notifications
                 {
                     // Show notification.
                     Logging.Message("showing what's new notification: last notified version was ", LastNotifiedVersionString);
-                    WhatsNewNotification notification = NotificationBase.ShowNotification<WhatsNewNotification>();
-                    if (notification != null)
+                    NotificationBase.ShowNotification<WhatsNewNotification>(notification =>
                     {
                         notification.Title = ModBase.Instance.Name;
                         notification.DSAButton.eventClicked += (component, clickEvent) => DontShowAgain();
                         notification.SetMessages(LastNotifiedVersion, messages);
-                    }
+                    });
                 }
             }
         }
